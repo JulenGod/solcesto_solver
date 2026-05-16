@@ -1,0 +1,38 @@
+[tool.poetry]
+name = "sol-cesto-solver"
+version = "0.1.0"
+description = "Detect Sol Cesto game state from the live game window via OpenCV template matching."
+readme = "README.md"
+license = "MIT"
+authors = ["Julen Sanchez <julensanchez09@gmail.com>"]
+packages = [{ include = "sol_cesto_solver", from = "src" }]
+
+[tool.poetry.dependencies]
+python = "^3.12"
+mss = ">=9.0.0"
+pygetwindow = ">=0.0.9"
+opencv-python = ">=4.10.0"
+numpy = ">=2.0.0"
+pydantic = ">=2.0.0"
+
+[tool.poetry.group.dev.dependencies]
+pytest = ">=8.0"
+ruff = ">=0.6"
+
+[tool.poetry.scripts]
+sol-cesto-solver = "sol_cesto_solver.cli:main"
+
+[build-system]
+requires = ["poetry-core>=1.0.0"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "N", "SIM"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
