@@ -2,199 +2,364 @@
 
 # Sol Cesto Solver
 
-### *Lee el tablero. Decide la mejor fila. Sobrevive.*
+### *Reads the board. Picks the safest row. No neural nets.*
 
-Asistente por visión por computador para [**Sol Cesto**](https://store.steampowered.com/app/2738490/Sol_Cesto/),
-el roguelite táctico de Goblinz Studio. Captura la ventana del juego, reconoce el
-estado del tablero, y **recomienda qué fila elegir** para minimizar la pérdida
-esperada de HP. Construido sobre OpenCV y `mss` — sin redes neuronales, sin
-entrenamiento, 100% determinista.
+A computer-vision assistant for [**Sol Cesto**](https://store.steampowered.com/app/2738490/Sol_Cesto/),
+the Mesoamerican-flavoured roguelite by Goblinz Studio. It captures the game
+window, recognises what each tile means, and tells you **which row gives you
+the smallest expected loss of HP**. Built with OpenCV template matching and a
+plain expected-value calculator — no training, no GPU, ~0 ms per cell, fully
+deterministic.
 
-[![Python](https://img.shields.io/badge/Python-3.12-3776AB?style=flat-square&logo=python&logoColor=white)](https://www.python.org/)
-[![OpenCV](https://img.shields.io/badge/OpenCV-4.10-5C3EE8?style=flat-square&logo=opencv&logoColor=white)](https://opencv.org/)
-[![Pydantic](https://img.shields.io/badge/Pydantic-2-E92063?style=flat-square&logo=pydantic&logoColor=white)](https://docs.pydantic.dev/)
+[![CI](https://github.com/JulenGod/solcesto_solver/actions/workflows/ci.yml/badge.svg)](https://github.com/JulenGod/solcesto_solver/actions/workflows/ci.yml)
+[![Python 3.12](https://img.shields.io/badge/Python-3.12-3776AB?style=flat-square&logo=python&logoColor=white)](https://www.python.org/)
+[![OpenCV 4](https://img.shields.io/badge/OpenCV-4-5C3EE8?style=flat-square&logo=opencv&logoColor=white)](https://opencv.org/)
+[![Pydantic 2](https://img.shields.io/badge/Pydantic-2-E92063?style=flat-square&logo=pydantic&logoColor=white)](https://docs.pydantic.dev/)
 [![Poetry](https://img.shields.io/badge/Poetry-managed-60A5FA?style=flat-square&logo=poetry&logoColor=white)](https://python-poetry.org/)
-[![License](https://img.shields.io/badge/License-MIT-yellow.svg?style=flat-square)](LICENSE)
+[![Platform Windows](https://img.shields.io/badge/Platform-Windows-0078D6?style=flat-square&logo=windows&logoColor=white)](#requirements)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=flat-square)](LICENSE)
 
 </div>
 
 ---
 
-## ✨ Qué hace
+## 📸 Demo
 
-**Sol Cesto** es un roguelite con tablero 4×4. Eliges una fila y caes con probabilidad
-uniforme (1/4) en una de las casillas. Si la casilla tiene un monstruo más fuerte que tú,
-pierdes corazones. Este asistente automatiza la pregunta *"¿qué fila tiene la menor
-pérdida esperada de HP?"*:
+Given this captured frame (the bundled sample):
 
-```
-Sol Cesto (en ejecución)  →  captura ventana  →  reconocimiento  →  GameState
-                                                                         │
-                                                                         ▼
-                                                                Algoritmo decisión
-                                                                         │
-                                                                         ▼
-                                                            { state, recommendation } JSON
+<p align="center">
+  <img src="tests/fixtures/screenshot.png" alt="Sol Cesto board sample" width="640">
+</p>
+
+Running:
+
+```powershell
+poetry run sol-cesto-solver --from-file tests/fixtures/screenshot.png
 ```
 
-Salida ejemplo (recortada):
+prints (abridged):
 
 ```json
 {
   "state": {
     "board": [
-      [{"content": "physical", "value": 3}, {"content": "magic", "value": 1}, ...],
-      ...
+      [
+        {"content": "physical",  "value": 3},
+        {"content": "magic",     "value": 1},
+        {"content": "physical",  "value": 3},
+        {"content": "treasure",  "value": null}
+      ],
+      [ {"content": "empty"}, {"content": "empty"}, {"content": "empty"}, {"content": "empty"} ],
+      [
+        {"content": "heal",      "value": 1},
+        {"content": "physical",  "value": 3},
+        {"content": "magic",     "value": 1},
+        {"content": "magic",     "value": 1}
+      ],
+      [
+        {"content": "treasure",  "value": null},
+        {"content": "magic",     "value": 1},
+        {"content": "magic",     "value": 1},
+        {"content": "magic",     "value": 1}
+      ]
     ],
-    "player": {"hp": 5, "max_hp": 5, "sword": 2, "magic": 1, ...}
+    "player": {"hp": 5, "max_hp": 5, "sword": 2, "magic": 1}
   },
   "recommendation": {
-    "best_row": 3,
+    "best_row": 1,
     "rows": [
-      {"row": 0, "expected_hp_change": -0.5, "worst_case_hp_change": -1.0, "cells": [...]},
-      {"row": 1, "expected_hp_change":  0.0, "worst_case_hp_change":  0.0, "cells": [...]},
+      {"row": 0, "expected_hp_change": -0.5,  "worst_case_hp_change": -1.0, "cells": [...]},
+      {"row": 1, "expected_hp_change":  0.0,  "worst_case_hp_change":  0.0, "cells": [...]},
       {"row": 2, "expected_hp_change": -0.25, "worst_case_hp_change": -1.0, "cells": [...]},
-      {"row": 3, "expected_hp_change":  0.0, "worst_case_hp_change":  0.0, "cells": [...]}
+      {"row": 3, "expected_hp_change":  0.0,  "worst_case_hp_change":  0.0, "cells": [...]}
     ]
   }
 }
 ```
 
-Las celdas se clasifican por el **badge** (el icono pequeño en la esquina), no por
-el sprite del monstruo: `physical` (espada roja), `magic` (varita azul), `heal`
-(corazón rojo), `treasure` (`?` dorado), `empty`. Esto es robusto a animaciones
-y a cualquier monstruo nuevo que tenga uno de esos badges.
+Translation: *"row 0 will cost you about half a heart on average and one heart
+in the worst case; rows 1 and 3 are safe; pick row 1."*
 
 ---
 
-## 🎯 Por qué template matching y no redes neuronales
+## ✨ What it does
 
-El arte de Sol Cesto es **pixel-perfect y consistente**: cada slime se renderiza igual,
-cada `3` se ve idéntico. En este contexto:
+Sol Cesto is a roguelite played on a 4×4 grid. Each turn you choose a **row**;
+your character lands with equal probability (¼) on one of the four tiles in
+that row, resolves whatever's there (a monster, a heal, a treasure, an empty
+square), and you keep going. The interesting question every turn is:
 
-| Enfoque | Por qué no |
-|---------|-----------|
-| YOLO / red neuronal | Necesita dataset etiquetado, entrenamiento, GPU; menos preciso aquí |
-| Tesseract / EasyOCR | Frágil con fuentes estilizadas y números pequeños |
-| **Template matching** | Cero entrenamiento, ~0 ms por celda, **100% fiable** ✓ |
+> *Which row minimises my expected HP loss?*
 
-Es la herramienta correcta para el problema, no la más impresionante. La complejidad
-extra de un modelo entrenado no aporta nada cuando el dominio es pixel-determinista.
+This project answers it automatically:
+
+```
+Sol Cesto (live window)
+        │
+        ▼ mss screenshot
+   BGR image
+        │
+        ▼ detect_board   (heuristic proportions)
+   4×4 GridLayout
+        │
+        ▼ cv2.matchTemplate   (badge icons + digits)
+   GameState  (pydantic)
+        │
+        ▼ recommend_row   (expected value per row)
+   Recommendation
+        │
+        ▼
+   { state, recommendation }   JSON on stdout
+```
+
+Cells are classified by their **badge** (the small icon in the corner of the
+tile), not by the underlying creature sprite. Sprites animate and vary; badges
+are static UI and always mean the same thing:
+
+| Badge          | `content`   | What it means                                |
+|----------------|-------------|----------------------------------------------|
+| 🔴 red sword   | `physical`  | Monster — clears safely if `player.sword ≥ value` |
+| 🔵 blue wand   | `magic`     | Monster — clears safely if `player.magic ≥ value` |
+| ❤️ red heart   | `heal`      | Heals `value` HP, capped at the room to `max_hp`  |
+| 🟡 gold `?`    | `treasure`  | Unknown reward (chest / gold pile / item)         |
+| —              | `empty`     | Nothing on this tile, *or* tile is hidden by a hover-preview overlay |
+
+That model is what makes the solver **robust to new content**: any new monster
+the game throws at you classifies correctly as `physical` or `magic` without
+re-extracting templates, as long as its badge is one of the four we know.
+
+---
+
+## 🎯 Why template matching (and not a CNN)
+
+| Approach                 | Why not here                                                        |
+|--------------------------|---------------------------------------------------------------------|
+| YOLO / a trained CNN     | Needs a labelled dataset, training time, a GPU, and is less precise on pixel-art |
+| Tesseract / EasyOCR      | Fragile on stylised small digits, brings heavy dependencies         |
+| **OpenCV template matching** | Zero training, ~0 ms per cell, **100% reproducible** ✓          |
+
+Sol Cesto's art is pixel-perfect and deterministic — there is no smarter tool
+for the job. The point of the project isn't to use the shiniest model; it's to
+pick the right tool and execute well.
+
+---
+
+## 🪟 Requirements
+
+- **Windows 10/11** (live capture uses `pygetwindow`, which only works on Windows).
+  The recognition + decision modules are platform-agnostic and run anywhere
+  with the CLI's `--from-file` flag.
+- **Python 3.12+**.
+- **[Poetry](https://python-poetry.org/docs/#installation)** for dependency
+  management.
+- A running copy of Sol Cesto, *or* a saved PNG of a board.
 
 ---
 
 ## 🚀 Quick start
 
 ```powershell
-# 1. Instala Poetry si no lo tienes -> https://python-poetry.org/docs/#installation
-
-# 2. Instala dependencias en un venv dentro del proyecto (.venv/)
+# 1. Clone and install
+git clone https://github.com/JulenGod/solcesto_solver.git
+cd solcesto_solver
 poetry install
 
-# 3. Extrae templates desde un screenshot del juego (una sola vez)
-poetry run python scripts/extract_templates.py path/to/screenshot.png
+# 2. (Optional) seed starter templates from the bundled sample screenshot
+poetry run python scripts/bootstrap_icons_from_screenshot.py
 
-# 4. Abre Sol Cesto y ejecuta
+# 3. Run against the bundled sample
+poetry run sol-cesto-solver --from-file tests/fixtures/screenshot.png
+
+# 4. Or capture the live game window
 poetry run sol-cesto-solver
 ```
 
-> El venv vive en `.venv/` dentro del proyecto gracias a `poetry.toml`
-> (`virtualenvs.in-project = true`), así VS Code / PyCharm / etc. lo encuentran solos.
+> The `.venv/` lives inside the project (`virtualenvs.in-project = true` in
+> `poetry.toml`), so IDEs auto-detect the interpreter.
 
 ---
 
-## 🖥️ CLI
+## 🖥️ CLI reference
 
-```powershell
-sol-cesto-solver                       # captura ventana -> JSON {state, recommendation}
-sol-cesto-solver --watch 2             # re-captura cada 2 segundos
-sol-cesto-solver --debug               # guarda debug-grid.png con grid superpuesto
-sol-cesto-solver --window "Sol Cesto"  # cambia el titulo de ventana a buscar
-sol-cesto-solver --from-file shot.png  # analiza un PNG en lugar de capturar
-sol-cesto-solver --mimic-chance 0.2    # penaliza cofres (probabilidad de mimic)
+```
+sol-cesto-solver                        Live capture -> JSON {state, recommendation}
+sol-cesto-solver --from-file shot.png   Analyse a saved PNG instead
+sol-cesto-solver --watch 2              Re-capture every 2 seconds
+sol-cesto-solver --debug                Also write debug-grid.png with the grid overlaid
+sol-cesto-solver --window "Sol Cesto"   Override the game window title to find
+sol-cesto-solver --mimic-chance 0.2     Penalise treasure cells (late-game mimics)
 ```
 
+Errors land on stderr; the JSON output on stdout is always parsable.
+
 ---
 
-## 🏗️ Arquitectura
+## 🧮 The decision algorithm
+
+Picking a row is a uniform lottery over its 4 cells. The expected change in HP
+is the average HP delta of the four outcomes:
+
+$$E[\Delta HP \mid \text{row}] = \frac{1}{4} \sum_{i=1}^{4} \Delta HP(\text{cell}_i)$$
+
+where `ΔHP(cell)` depends on the badge:
+
+| Badge       | `ΔHP(cell)`                                          |
+|-------------|------------------------------------------------------|
+| `physical`  | `−max(0, value − player.sword)`                      |
+| `magic`     | `−max(0, value − player.magic)`                      |
+| `heal`      | `+min(value, max_hp − hp)`  *(capped at room to max)* |
+| `treasure`  | `−mimic_chance · ASSUMED_MIMIC_LOSS`  *(default 0)*  |
+| `empty`     | `0`                                                  |
+
+We pick the row with the largest `E[ΔHP]`. **Tiebreakers**, in order:
+
+1. Best worst-case (more defensive — useful at low HP).
+2. Lowest row index (stability across runs).
+
+### The `mimic_chance` hyperparameter
+
+On late levels, some "chests" are actually mimics — monsters in disguise that
+only reveal themselves through an animation tell or a player-applied debuff.
+We can't see that from a single frame, so the algorithm penalises every
+`treasure` cell by `mimic_chance · ASSUMED_MIMIC_LOSS` (default `0` for early
+levels, raise it on later levels via `--mimic-chance`).
+
+---
+
+## 🏗️ Architecture
 
 ```
 src/sol_cesto_solver/
-├── capture.py       Localiza la ventana de Sol Cesto y captura con mss
-├── grid.py          Calibra el tablero 4x4 y recorta celdas
-├── recognition.py   Template matching de badges (sword/magic/heart/?) y dígitos
-├── state.py         Dataclasses pydantic: GameState, Player, Cell
-├── decision.py      Algoritmo: evalúa cada fila y recomienda la mejor
-└── cli.py           Pipeline: captura -> reconocimiento -> decisión -> JSON
+├── capture.py        Locate + grab the Sol Cesto window via mss (Windows only)
+├── grid.py           Detect the 4×4 board area and crop cells
+├── recognition.py    Template-match badge icons (sword/magic/heart/?) and digits
+├── state.py          Pydantic models: GameState, Player, Cell
+├── decision.py       Expected-value evaluation, row recommendation
+└── cli.py            Pipeline: capture → recognise → recommend → JSON
+
+scripts/
+├── extract_templates.py            Interactive helper: drag a box, press a key
+└── bootstrap_icons_from_screenshot.py   Seed templates from the bundled sample
+
+templates/
+├── icons/   sword.png, magic.png, heart.png, question.png   (badge UI)
+└── digits/  0–9 in three font variants (badge / hp / stat) + % and /
+
+tests/
+├── fixtures/   Sample screenshot the end-to-end test runs against
+├── test_recognition.py   Grid geometry + full-pipeline smoke test
+└── test_decision.py      Algorithm unit tests (17 cases)
 ```
-
-Las templates (PNGs recortados del juego) viven en `templates/icons/` y `templates/digits/`.
-El script `scripts/extract_templates.py` ayuda a generarlas la primera vez.
-
----
-
-## 🧮 Algoritmo de decisión
-
-Caer en una fila es un sorteo uniforme entre sus 4 celdas. Para cada fila
-computamos el **valor esperado** del cambio de HP:
-
-```
-E[ΔHP | fila r] = (1/4) · Σ hp_change(cell_i)
-```
-
-donde `hp_change(cell)` depende del badge:
-
-| Badge       | hp_change                                            |
-|-------------|------------------------------------------------------|
-| `physical`  | `-max(0, value − player.sword)`                      |
-| `magic`     | `-max(0, value − player.magic)`                      |
-| `heal`      | `+min(value, max_hp − hp)`  *(capado al hueco)*      |
-| `treasure`  | `-mimic_chance · ASSUMED_MIMIC_LOSS`                 |
-| `empty`     | `0`                                                  |
-
-Recomendamos la fila con `E[ΔHP]` máximo. **Tiebreakers**: primero mejor
-peor-caso (más defensivo), luego menor índice de fila (estabilidad).
-
-`mimic_chance` es un hiperparámetro reservado para los niveles tardíos donde
-algunos cofres son mimics — visualmente indistinguibles desde un frame único,
-así que el algoritmo los descuenta probabilísticamente. Default: `0.0`.
 
 ---
 
 ## 🧪 Tests
 
 ```powershell
-poetry run pytest
+poetry run pytest -v
 ```
 
-Los tests cubren:
-- Geometría del grid (cell rects, crops, dimensiones)
-- Pipeline de reconocimiento contra screenshots en `tests/fixtures/` (si existen)
-- Algoritmo de decisión: cambio de HP por tipo de celda, valor esperado por fila,
-  tiebreakers, hiperparámetro `mimic_chance`
+Coverage:
+- Grid geometry (cell rects, crops, dimensions).
+- **End-to-end smoke test** that runs the full recognition pipeline against
+  the bundled screenshot and asserts known cells and player stats — any
+  regression in detection or templates flips it red.
+- **17 algorithm unit tests** covering every content type, the heal cap,
+  the `None`-value fallback, tie-breaks, and `mimic_chance`.
+
+CI runs `ruff check` + `pytest` on every push and PR (see
+[`.github/workflows/ci.yml`](.github/workflows/ci.yml)).
+
+---
+
+## 🧩 Extending the solver
+
+The detector is a thin layer over template matching, so adding new content
+means adding templates and (rarely) one line of mapping. There are three
+extension points:
+
+**1. A new badge appears** (e.g. a green shield for *defence*):
+
+```powershell
+poetry run python scripts/extract_templates.py path/to/your/screenshot.png
+# -> drag a tight box around the icon, press 'i', name it "shield"
+```
+
+Then map it in [`recognition.py`](src/sol_cesto_solver/recognition.py):
+
+```python
+BADGE_TO_CONTENT: dict[str, CellContent] = {
+    "sword": "physical",
+    "magic": "magic",
+    "heart": "heal",
+    "question": "treasure",
+    "shield": "defence",   # ← add here
+}
+```
+
+…and add `"defence"` to `CellContent` in `state.py`.
+
+**2. A new digit appears** (your current screenshots never include "7"):
+
+```powershell
+poetry run python scripts/extract_templates.py path/to/screenshot_with_7.png
+# -> drag a box around the 7, press '7'
+```
+
+If the digit is rendered in a different font (e.g. on the HP heart vs. inside
+a `25%` badge), save it under a suffix recognised by `SYMBOL_NAMES`:
+`7_hp.png`, `7_stat.png`, etc.
+
+**3. A whole new monster type**: nothing to do! The badge is what classifies
+the cell, not the sprite.
+
+---
+
+## ⚠️ Known limitations
+
+- **Preview row reads as `empty`.** When you hover a row in-game, an "ok ♥" /
+  "25%" overlay covers the badges of that row's cells, so the detector can't
+  read them. In practice this means *capture without hovering*. Detecting the
+  overlay explicitly is Phase 3 work.
+- **Mimic chests can't be told apart from real chests in a single frame.**
+  See [the `mimic_chance` section](#the-mimic_chance-hyperparameter) for the
+  workaround. Frame-diff–based mimic detection is on the roadmap as Phase 5.
+- **Coordinates are calibrated for the bundled screenshot resolution.** The
+  board detector uses fixed proportions of the captured image; very unusual
+  aspect ratios or zoom levels may need a hand-edit of
+  `~/.sol-cesto-solver/calibration.json`. `--debug` prints the grid overlay
+  so you can eyeball misalignment.
+- **HP > 9.** The HP region currently expects single-digit `current/max`
+  (the fallback splits "55" → 5/5). Multi-digit HP (e.g. `12/15`) needs a
+  proper `/` template and a stricter parser. The model already handles it;
+  only the regex-style fallback is the constraint.
+- **Sprites and badges may be re-skinned** in future game updates. Replace
+  the affected templates and you're back online — no code change needed.
 
 ---
 
 ## 🗺️ Roadmap
 
-- [x] **Fase 1**: detección de pantalla → JSON del estado
-- [x] **Fase 2**: algoritmo de decisión (valor esperado por fila + mimic risk)
-- [ ] **Fase 3**: overlay en pantalla mostrando la fila recomendada en vivo
-- [ ] **Fase 4**: lookahead multi-turno, gestión de pociones e inventario
-- [ ] **Fase 5**: detección de mimics por diff entre frames consecutivos
+- [x] **Phase 1** — Detect the screen, produce a `GameState` JSON.
+- [x] **Phase 2** — Recommend a row via expected-value scoring (+ `mimic_chance`).
+- [ ] **Phase 3** — On-screen overlay highlighting the recommended row live.
+- [ ] **Phase 4** — Multi-turn lookahead, potion / inventory management.
+- [ ] **Phase 5** — Frame-diff mimic detection during live capture.
 
 ---
 
 ## 🇪🇸 En español, en resumen
 
-Un script Python que mira el juego **Sol Cesto** mientras juegas, identifica todo lo
-que aparece en pantalla (monstruos, cofres, fresas, tu vida, tu daño) y te dice
-qué fila tiene la menor pérdida esperada de corazones. Devuelve un JSON con el
-estado del tablero **y** la recomendación con el desglose de cada fila — así puedes
-ver no sólo qué jugar, sino por qué.
+Un script de Python que mira tu juego de **Sol Cesto** mientras juegas,
+identifica todo lo que aparece en la pantalla (monstruos rojos, monstruos
+azules, fresas, cofres, tu vida, tu daño) y te dice qué fila tiene la **menor
+pérdida esperada de corazones**. Devuelve un JSON con el estado del tablero
+**y** la recomendación con el desglose por fila, así no sólo ves qué jugar
+sino por qué. Sin redes neuronales: `cv2.matchTemplate` sobre los badges, un
+poco de aritmética, y listo.
 
 ---
 
 ## 📄 License
 
-[MIT](LICENSE)
+[MIT](LICENSE) — fork it, tweak it, beat your record at Sol Cesto.
