@@ -1,5 +1,6 @@
-"""Command-line interface: capture -> recognize -> print JSON."""
+"""Command-line interface: capture -> recognize -> recommend -> print JSON."""
 import argparse
+import json
 import sys
 import time
 from pathlib import Path
@@ -8,6 +9,7 @@ import cv2
 import numpy as np
 
 from .capture import WindowNotFoundError, capture, find_window
+from .decision import recommend_row
 from .grid import detect_board, load_calibration, save_calibration, save_debug_overlay
 from .recognition import recognize_state
 
@@ -39,6 +41,17 @@ def _build_parser() -> argparse.ArgumentParser:
         metavar="PNG",
         help="Load a PNG instead of capturing the live window.",
     )
+    parser.add_argument(
+        "--mimic-chance",
+        type=float,
+        default=0.0,
+        metavar="P",
+        help=(
+            "Probability that a chest is actually a mimic (0.0-1.0). Treasure cells "
+            "get penalised in the row-recommendation accordingly. Default 0 (early "
+            "levels). Raise on later levels where mimics start appearing."
+        ),
+    )
     return parser
 
 
@@ -64,7 +77,13 @@ def _run_once(args: argparse.Namespace) -> int:
     save_calibration(layout)
 
     state = recognize_state(image, layout)
-    print(state.model_dump_json(indent=2))
+    recommendation = recommend_row(state, mimic_chance=args.mimic_chance)
+
+    output = {
+        "state": state.model_dump(),
+        "recommendation": recommendation.model_dump(),
+    }
+    print(json.dumps(output, indent=2))
 
     if args.debug:
         save_debug_overlay(image, layout, "debug-grid.png")
