@@ -86,7 +86,7 @@ def _run_once(args: argparse.Namespace) -> int:
     print(json.dumps(output, indent=2))
 
     if args.debug:
-        save_debug_overlay(image, layout, "debug-grid.png")
+        save_debug_overlay(image, layout, "debug-grid.png", state, recommendation)
         print("wrote debug-grid.png", file=sys.stderr)
 
     return 0

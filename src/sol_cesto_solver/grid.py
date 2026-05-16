@@ -2,9 +2,14 @@
 import json
 from dataclasses import asdict, dataclass
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import cv2
 import numpy as np
+
+if TYPE_CHECKING:
+    from .decision import Recommendation
+    from .state import GameState
 
 ROWS = 4
 COLS = 4
@@ -87,8 +92,21 @@ def save_calibration(layout: GridLayout) -> None:
     CALIBRATION_FILE.write_text(json.dumps(asdict(layout), indent=2))
 
 
-def save_debug_overlay(image: np.ndarray, layout: GridLayout, output_path: str) -> None:
-    """Write a copy of `image` with the grid drawn on top, for visual verification."""
+def save_debug_overlay(
+    image: np.ndarray,
+    layout: GridLayout,
+    output_path: str,
+    state: "GameState | None" = None,
+    recommendation: "Recommendation | None" = None,
+) -> None:
+    """Write a copy of `image` with the grid overlaid, for visual verification.
+
+    If `state` is given, each cell is labelled with its detected `content` and
+    `value` instead of the bare `r{r}c{c}` coordinate.
+
+    If `recommendation` is given, the recommended row is highlighted with a
+    thicker yellow border.
+    """
     debug = image.copy()
 
     cv2.rectangle(
@@ -118,19 +136,76 @@ def save_debug_overlay(image: np.ndarray, layout: GridLayout, output_path: str) 
             1,
         )
 
+    # Per-cell classification chips: a coloured rectangle near the bottom of
+    # each cell with the detected content + value. Background colour codes the
+    # type so the image reads at a glance even when scaled down for thumbnails.
+    content_bg = {
+        "physical": (40, 40, 220),    # red
+        "magic":    (220, 80, 40),    # blue
+        "heal":     (140, 80, 220),   # pink/magenta
+        "treasure": (40, 200, 220),   # gold
+        "empty":    (110, 110, 110),  # gray
+    }
     for r in range(ROWS):
         for c in range(COLS):
-            x = layout.board_x + c * layout.cell_w + 6
-            y = layout.board_y + r * layout.cell_h + 22
+            if state is not None:
+                cell = state.board[r][c]
+                label = cell.content
+                if cell.value is not None:
+                    label += f" {cell.value}"
+                bg_color = content_bg.get(cell.content, (90, 90, 90))
+            else:
+                label = f"r{r}c{c}"
+                bg_color = (90, 90, 90)
+
+            font_scale = 1.3
+            font_thickness = 3
+            (tw, th), baseline = cv2.getTextSize(
+                label, cv2.FONT_HERSHEY_SIMPLEX, font_scale, font_thickness
+            )
+            pad_x, pad_y = 18, 14
+            chip_w, chip_h = tw + 2 * pad_x, th + 2 * pad_y + baseline
+
+            cell_x = layout.board_x + c * layout.cell_w
+            cell_y = layout.board_y + r * layout.cell_h
+            chip_x = cell_x + (layout.cell_w - chip_w) // 2
+            chip_y = cell_y + layout.cell_h - chip_h - 18
+
+            cv2.rectangle(
+                debug,
+                (chip_x, chip_y),
+                (chip_x + chip_w, chip_y + chip_h),
+                bg_color,
+                -1,
+            )
+            cv2.rectangle(
+                debug,
+                (chip_x, chip_y),
+                (chip_x + chip_w, chip_y + chip_h),
+                (255, 255, 255),
+                2,
+            )
             cv2.putText(
                 debug,
-                f"r{r}c{c}",
-                (x, y),
+                label,
+                (chip_x + pad_x, chip_y + pad_y + th),
                 cv2.FONT_HERSHEY_SIMPLEX,
-                0.5,
+                font_scale,
                 (255, 255, 255),
-                1,
+                font_thickness,
                 cv2.LINE_AA,
             )
+
+    if recommendation is not None:
+        r = recommendation.best_row
+        y_top = layout.board_y + r * layout.cell_h
+        y_bot = layout.board_y + (r + 1) * layout.cell_h
+        cv2.rectangle(
+            debug,
+            (layout.board_x, y_top),
+            (layout.board_x + layout.board_w, y_bot),
+            (0, 255, 255),  # bright yellow accent
+            5,
+        )
 
     cv2.imwrite(output_path, debug)
