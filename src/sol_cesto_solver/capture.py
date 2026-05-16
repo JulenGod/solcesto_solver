@@ -1,4 +1,11 @@
-"""Capture the Sol Cesto game window."""
+"""Capture the Sol Cesto game window.
+
+**Platform: Windows only.** This module depends on `pygetwindow` to find the
+Sol Cesto window by title. `pygetwindow` officially supports Windows; on Linux
+and macOS it either fails to import or returns nothing useful. The recognition
+and decision modules are platform-agnostic and can run on any OS using a saved
+PNG via the CLI's ``--from-file`` flag.
+"""
 from dataclasses import dataclass
 
 import numpy as np

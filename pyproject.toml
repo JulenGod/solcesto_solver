@@ -5,6 +5,17 @@ description = "Detect Sol Cesto game state from the live game window via OpenCV 
 readme = "README.md"
 license = "MIT"
 authors = ["Julen Sanchez <julensanchez09@gmail.com>"]
+repository = "https://github.com/JulenGod/solcesto_solver"
+keywords = ["sol-cesto", "computer-vision", "opencv", "template-matching", "game-solver"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: End Users/Desktop",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: Microsoft :: Windows",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Games/Entertainment",
+    "Topic :: Scientific/Engineering :: Image Recognition",
+]
 packages = [{ include = "sol_cesto_solver", from = "src" }]
 
 [tool.poetry.dependencies]
