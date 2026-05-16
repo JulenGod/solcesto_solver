@@ -6,8 +6,16 @@ import pygetwindow as gw
 from mss import mss
 
 
-class WindowNotFoundError(Exception):
-    """Raised when the Sol Cesto window cannot be located or captured."""
+class CaptureError(Exception):
+    """Base class for anything that prevents us from obtaining an image."""
+
+
+class WindowNotFoundError(CaptureError):
+    """The game window could not be located, was minimized, or had zero size."""
+
+
+class ImageReadError(CaptureError):
+    """A PNG/image file could not be read (bad path, unsupported format, …)."""
 
 
 @dataclass(frozen=True)

@@ -8,7 +8,7 @@ from pathlib import Path
 import cv2
 import numpy as np
 
-from .capture import WindowNotFoundError, capture, find_window
+from .capture import CaptureError, ImageReadError, capture, find_window
 from .decision import recommend_row
 from .grid import detect_board, load_calibration, save_calibration, save_debug_overlay
 from .recognition import recognize_state
@@ -59,7 +59,7 @@ def _grab_image(args: argparse.Namespace) -> np.ndarray:
     if args.from_file is not None:
         image = cv2.imread(str(args.from_file))
         if image is None:
-            raise WindowNotFoundError(f"could not read image: {args.from_file}")
+            raise ImageReadError(f"could not read image: {args.from_file}")
         return image
     bounds = find_window(args.window)
     return capture(bounds)
@@ -68,7 +68,7 @@ def _grab_image(args: argparse.Namespace) -> np.ndarray:
 def _run_once(args: argparse.Namespace) -> int:
     try:
         image = _grab_image(args)
-    except WindowNotFoundError as e:
+    except CaptureError as e:
         print(f"error: {e}", file=sys.stderr)
         return 2
 
