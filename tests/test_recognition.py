@@ -42,15 +42,18 @@ def test_crop_returns_cell_sized_slice():
 
 
 @pytest.mark.skipif(
-    not any(FIXTURES_DIR.glob("*.png")),
-    reason="No screenshot fixtures present yet (add PNGs to tests/fixtures/).",
+    not (FIXTURES_DIR / "screenshot.png").exists(),
+    reason="Sample screenshot missing (run scripts/bootstrap_icons_from_screenshot.py).",
 )
-def test_recognize_state_returns_full_board():
-    """Smoke test against any fixture PNG."""
+def test_recognize_state_on_bundled_screenshot():
+    """End-to-end smoke test: run the full pipeline against the bundled sample.
+
+    Asserts the structure plus a handful of cells we know by visual inspection,
+    so a regression in either the detector or the templates flips this test red.
+    """
     from sol_cesto_solver.recognition import recognize_state
 
-    fixture = next(FIXTURES_DIR.glob("*.png"))
-    image = cv2.imread(str(fixture))
+    image = cv2.imread(str(FIXTURES_DIR / "screenshot.png"))
     layout = detect_board(image)
     state = recognize_state(image, layout)
 
@@ -58,3 +61,19 @@ def test_recognize_state_returns_full_board():
     assert len(state.board) == ROWS
     for row in state.board:
         assert len(row) == COLS
+
+    # Known-true cells from the bundled screenshot.
+    assert state.board[0][0].content == "physical"
+    assert state.board[0][0].value == 3
+    assert state.board[0][1].content == "magic"
+    assert state.board[0][1].value == 1
+    assert state.board[0][3].content == "treasure"
+    assert state.board[2][0].content == "heal"
+    assert state.board[2][0].value == 1
+    assert state.board[3][0].content == "treasure"
+
+    # Player stats from the bundled screenshot.
+    assert state.player.hp == 5
+    assert state.player.max_hp == 5
+    assert state.player.sword == 2
+    assert state.player.magic == 1

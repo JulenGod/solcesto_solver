@@ -1,13 +1,22 @@
-"""Bootstrap icon templates from screenshot.png by cropping known cell positions.
+"""Seed the templates/ directory from the bundled sample screenshot.
 
-Convenience helper for first-time setup: extracts a starter set of icon templates
-from the bundled `screenshot.png`, using hand-picked cells where each icon appears
-cleanly (no overlays). Lets you run `sol-cesto-solver --from-file screenshot.png`
-and see real recognition without going through the interactive extractor first.
+One-time convenience for first-time setup: extracts a starter set of icon and
+digit templates from `tests/fixtures/screenshot.png` so you can run
+`sol-cesto-solver --from-file tests/fixtures/screenshot.png` and see real
+recognition immediately, without going through the interactive extractor first.
 
-For digits and any icons not covered here, use:
-    poetry run python scripts/extract_templates.py screenshot.png
+WARNING: the cell-relative coordinates hard-coded below are calibrated for the
+specific bundled fixture (resolution 2552x1427, game v2026-04). For a different
+screenshot (different resolution, different game version, new content types),
+use the interactive extractor instead:
+
+    poetry run python scripts/extract_templates.py path/to/your/screenshot.png
+
+Usage:
+    poetry run python scripts/bootstrap_icons_from_screenshot.py
+    poetry run python scripts/bootstrap_icons_from_screenshot.py path/to/alt.png
 """
+import sys
 from pathlib import Path
 
 import cv2
@@ -15,7 +24,7 @@ import numpy as np
 
 ROOT = Path(__file__).resolve().parent.parent
 TEMPLATES = ROOT / "templates"
-SCREENSHOT = ROOT / "screenshot.png"
+DEFAULT_SCREENSHOT = ROOT / "tests" / "fixtures" / "screenshot.png"
 
 # Keep in sync with src/sol_cesto_solver/grid.py
 LEFT_RATIO = 0.215
@@ -65,15 +74,16 @@ def _save(image: np.ndarray, path: Path) -> None:
 
 
 def main() -> int:
-    if not SCREENSHOT.exists():
-        print(f"missing {SCREENSHOT}")
+    screenshot = Path(sys.argv[1]) if len(sys.argv) >= 2 else DEFAULT_SCREENSHOT
+    if not screenshot.exists():
+        print(f"missing {screenshot}")
         return 1
-    img = cv2.imread(str(SCREENSHOT))
+    img = cv2.imread(str(screenshot))
     if img is None:
-        print(f"could not read {SCREENSHOT}")
+        print(f"could not read {screenshot}")
         return 1
 
-    print("extracting badge-icon templates from screenshot.png:")
+    print(f"extracting badge-icon templates from {screenshot.name}:")
     # Tight crops on JUST the coloured icon (not the gray badge background).
     # The gray bg is identical across all badges and would dominate the match
     # score, drowning out the red-vs-blue colour signal that distinguishes
@@ -102,7 +112,7 @@ def main() -> int:
     )
 
     print()
-    print("extracting digit templates from screenshot.png:")
+    print(f"extracting digit templates from {screenshot.name}:")
     # "3" digit alone — from sword badge top-left of monster cell row 0 col 0.
     _save(
         _crop_cell_region(img, 0, 0, 0.24, 0.07, 0.34, 0.21),
