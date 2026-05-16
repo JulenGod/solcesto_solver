@@ -7,7 +7,7 @@ blue wand, red heart, gold "?") is stable UI that always means the same thing.
 """
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
 CellContent = Literal[
     "physical",   # Red sword badge: defeated cleanly if player.sword >= value.
@@ -27,14 +27,12 @@ class Cell(BaseModel):
 
 
 class Player(BaseModel):
-    """The player's stats and inventory."""
+    """The player's stats: current/max HP and the two attack stats."""
 
     hp: int
     max_hp: int
     sword: int = 0
     magic: int = 0
-    inventory: list[str] = Field(default_factory=list)
-    modifiers: dict[str, float] = Field(default_factory=dict)
 
 
 class GameState(BaseModel):
