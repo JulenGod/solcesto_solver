@@ -70,7 +70,9 @@ The same command without `--debug` prints (abridged):
         {"content": "magic",     "value": 1}
       ]
     ],
-    "player": {"hp": 5, "max_hp": 5, "sword": 2, "magic": 1}
+    "player": {"hp": 5, "max_hp": 5, "sword": 2, "magic": 1},
+    "gold": 0,
+    "door": {"cleared": 0, "required": 5}
   },
   "recommendation": {
     "best_row": 1,
@@ -118,6 +120,11 @@ Sol Cesto (live window)
         ▼
    { state, recommendation }   JSON on stdout
 ```
+
+Alongside the board it also tracks the run-level counters on the right panel:
+**gold** (the frog's number) and the **door / exit progress** (`cleared` of
+`required` tiles — the "0/5" badge). Both are best-effort and need the side
+panel on screen.
 
 Cells are classified by their **badge** (the small icon in the corner of the
 tile), not by the underlying creature sprite. Sprites animate and vary; badges
