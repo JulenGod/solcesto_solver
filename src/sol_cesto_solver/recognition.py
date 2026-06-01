@@ -28,7 +28,8 @@ DIGIT_THRESHOLD = 0.85
 # heart its own looser threshold (its two stacked "5"s vary in size with perspective).
 HP_DIGIT_THRESHOLD = 0.55
 STAT_DIGIT_THRESHOLD = 0.70
-HUD_DIGIT_THRESHOLD = 0.60  # door "0/5" and the gold counter (small dark-on-light digits)
+HUD_DIGIT_THRESHOLD = 0.76  # door "0/5" + gold counter; high enough that the bar-like
+#                             "1" stops matching spuriously (e.g. a "0" mis-read as "01")
 
 # Every template was cropped from one 2552px-wide screenshot. cv2.matchTemplate is
 # NOT scale-invariant, so a capture at a different window size would fail to match.
@@ -261,11 +262,12 @@ def recognize_player(
     hp_text = _scan_digits(hp_region, hp_digits, HP_DIGIT_THRESHOLD, base_scale)
     hp_parsed = _parse_hp(hp_text)
     if hp_parsed is None:
-        # The slash on the heart is tiny and diagonal — easy to miss. If we have at
-        # least two digits, assume current = first, max = last.
-        digits = [c for c in hp_text if c.isdigit()]
-        if len(digits) >= 2:
-            hp_parsed = (int(digits[0]), int(digits[-1]))
+        # The slash on the heart is tiny and diagonal, so we usually just get the two
+        # digits. HP is "current/max" with current <= max, so taking (min, max) is
+        # robust to the stacked digits being detected out of order.
+        nums = sorted(int(c) for c in hp_text if c.isdigit())
+        if len(nums) >= 2:
+            hp_parsed = (nums[0], nums[-1])
     hp, max_hp = hp_parsed if hp_parsed else (0, 0)
 
     # Sword + magic numbers sit next to their icons in the lower-right side panel.
