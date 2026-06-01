@@ -28,6 +28,21 @@ class Cell(BaseModel):
     buffed: bool = False        # shown damage is raised by an adjacent Drummer (+1).
 
 
+class ToothSlot(BaseModel):
+    """An equipped Tooth shown in the top-left "mouth" (a devil-statue run modifier).
+
+    Only occupied slots are reported. `color` is a coarse dominant-colour hint
+    (red/blue/gold/dark/...) to help label the tooth; `species` is the resolved
+    Tooth key once identification is wired up. While `species` is None the overlay
+    flags the tooth as unread so it can be labelled on the fly.
+    """
+
+    row: int
+    col: int
+    color: str | None = None
+    species: str | None = None
+
+
 class Player(BaseModel):
     """The player's stats: current/max HP and the two attack stats."""
 
@@ -75,3 +90,4 @@ class GameState(BaseModel):
     gold: int | None = None   # current gold (the frog's counter); None if unread.
     door: Door | None = None  # exit progress; None if unread.
     modifiers: Modifiers = Field(default_factory=Modifiers)  # landing/reward biases.
+    teeth: list[ToothSlot] = Field(default_factory=list)  # equipped teeth (occupied slots).

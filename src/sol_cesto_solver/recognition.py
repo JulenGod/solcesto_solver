@@ -15,6 +15,7 @@ import numpy as np
 from .grid import COLS, ROWS, GridLayout
 from .species import identify_species
 from .state import Cell, CellContent, Door, GameState, Player
+from .teeth_vision import read_teeth
 
 TEMPLATES_DIR = Path(__file__).resolve().parents[2] / "templates"
 
@@ -395,4 +396,5 @@ def recognize_state(image: np.ndarray, layout: GridLayout) -> GameState:
         ),
         gold=gold,
         door=door,
+        teeth=read_teeth(image),
     )

@@ -25,7 +25,7 @@ if TYPE_CHECKING:
     from .capture import WindowBounds
     from .decision import Recommendation
     from .grid import GridLayout
-    from .state import Cell, GameState
+    from .state import Cell, GameState, ToothSlot
 
 # Pixels between the right edge of the board and the info panel.
 PANEL_MARGIN = 24
@@ -138,9 +138,21 @@ def hud_lines(state: GameState, recommendation: Recommendation) -> list[str]:
             f"MOD swd{_fmt_pct(m.physical)} mag{_fmt_pct(m.magic)} hrt{_fmt_pct(m.heal)} "
             f"chs{_fmt_pct(m.treasure)} spk{_fmt_pct(m.trap)} gld x{m.gold_multiplier or 1}"
         ),
+        teeth_line(state.teeth),
         "",
     ]
     return summary + format_panel_lines(recommendation)
+
+
+def teeth_line(teeth: list[ToothSlot]) -> str:
+    """One-line teeth status; warns (``!!`` prefix) when any tooth is unidentified."""
+    if not teeth:
+        return "TEETH none"
+    unread = [t for t in teeth if t.species is None]
+    if unread:
+        colors = ", ".join(t.color or "?" for t in unread)
+        return f"!! TEETH {len(unread)}/{len(teeth)} UNREAD ({colors})"
+    return f"TEETH {len(teeth)} ok"
 
 
 def enable_dpi_awareness() -> None:
@@ -187,6 +199,7 @@ class Overlay:
     ROW_WIDTH = 6
     HUD_BG = "#0E0E0C"        # opaque panel behind the HUD text (not the key colour)
     HUD_FG = "#EDEDED"
+    HUD_WARN = "#FF6B6B"      # lines starting with "!!" (e.g. unread teeth) draw in red
     CONTENT_COLORS = {        # per-cell label colour by content type
         "physical": "#FF5A5A",
         "magic": "#5AA0FF",
@@ -258,8 +271,9 @@ class Overlay:
             x0, y0, x0 + width, y0 + height, fill=self.HUD_BG, outline=self.BOARD_COLOR, width=2
         )
         for i, line in enumerate(lines):
+            fill = self.HUD_WARN if line.startswith("!!") else self.HUD_FG
             self.canvas.create_text(
-                x0 + pad, y0 + pad + i * line_h, text=line, fill=self.HUD_FG,
+                x0 + pad, y0 + pad + i * line_h, text=line, fill=fill,
                 font=("Consolas", 13, "bold"), anchor="nw",
             )
 

@@ -15,8 +15,9 @@ from sol_cesto_solver.overlay import (
     hud_lines,
     panel_anchor,
     row_highlight_rect,
+    teeth_line,
 )
-from sol_cesto_solver.state import Cell, Door, GameState, Modifiers, Player
+from sol_cesto_solver.state import Cell, Door, GameState, Modifiers, Player, ToothSlot
 
 
 def _layout() -> GridLayout:
@@ -124,3 +125,24 @@ def test_hud_lines_include_stats_gold_door_and_pick():
     assert "DOOR 2/5" in text
     assert "swd+30%" in text
     assert "Pick row 1" in text
+
+
+# --- teeth notification ------------------------------------------------------
+
+def test_teeth_line_says_none_when_no_teeth():
+    assert teeth_line([]) == "TEETH none"
+
+
+def test_teeth_line_warns_about_unidentified_teeth():
+    teeth = [ToothSlot(row=0, col=1, color="red"), ToothSlot(row=0, col=2, color="blue")]
+    line = teeth_line(teeth)
+    assert line.startswith("!!")  # the "!!" marker makes the overlay draw it in red
+    assert "2/2 UNREAD" in line
+    assert "red" in line and "blue" in line
+
+
+def test_teeth_line_is_quiet_once_all_identified():
+    teeth = [ToothSlot(row=0, col=1, color="red", species="strawberry_tooth")]
+    line = teeth_line(teeth)
+    assert not line.startswith("!!")
+    assert line == "TEETH 1 ok"
