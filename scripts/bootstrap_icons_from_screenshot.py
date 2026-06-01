@@ -157,6 +157,21 @@ def main() -> int:
     )
 
     print()
+    print(f"extracting HUD templates from {screenshot.name}:")
+    # Door medallion "0" (top of the "0/5" exit badge) and the frog's gold "0".
+    # The door's "/" and bottom digit sit on the chain beads and don't crop
+    # cleanly, so only the "0"s are seeded; add the rest with extract_templates.py
+    # as the values change in play (save them as e.g. 1_door.png, 7_gold.png).
+    _save(
+        _crop_image_region(img, 0.899, 0.589, 0.909, 0.607),
+        TEMPLATES / "digits" / "0_door.png",
+    )
+    _save(
+        _crop_image_region(img, 0.900, 0.890, 0.9115, 0.908),
+        TEMPLATES / "digits" / "0_gold.png",
+    )
+
+    print()
     print("done.")
     return 0
 

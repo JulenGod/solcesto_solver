@@ -13,7 +13,7 @@ import cv2
 import numpy as np
 
 from .grid import COLS, ROWS, GridLayout
-from .state import Cell, CellContent, GameState, Player
+from .state import Cell, CellContent, Door, GameState, Player
 
 TEMPLATES_DIR = Path(__file__).resolve().parents[2] / "templates"
 
@@ -24,6 +24,7 @@ DIGIT_THRESHOLD = 0.85
 # heart its own looser threshold (its two stacked "5"s vary in size with perspective).
 HP_DIGIT_THRESHOLD = 0.55
 STAT_DIGIT_THRESHOLD = 0.70
+HUD_DIGIT_THRESHOLD = 0.60  # door "0/5" and the gold counter (small dark-on-light digits)
 
 # Every template was cropped from one 2552px-wide screenshot. cv2.matchTemplate is
 # NOT scale-invariant, so a capture at a different window size would fail to match.
@@ -56,6 +57,12 @@ SYMBOL_NAMES = {
     # *_stat variants: large stylised font next to the sword and magic icons.
     "0_stat": "0", "1_stat": "1", "2_stat": "2", "3_stat": "3", "4_stat": "4",
     "5_stat": "5", "6_stat": "6", "7_stat": "7", "8_stat": "8", "9_stat": "9",
+    # *_door / *_gold: right-panel HUD readouts — the door "0/5" and the gold counter.
+    "0_door": "0", "1_door": "1", "2_door": "2", "3_door": "3", "4_door": "4",
+    "5_door": "5", "6_door": "6", "7_door": "7", "8_door": "8", "9_door": "9",
+    "slash_door": "/",
+    "0_gold": "0", "1_gold": "1", "2_gold": "2", "3_gold": "3", "4_gold": "4",
+    "5_gold": "5", "6_gold": "6", "7_gold": "7", "8_gold": "8", "9_gold": "9",
 }
 
 
@@ -266,8 +273,44 @@ def _digit_subset(digits: dict[str, np.ndarray], kind: str) -> dict[str, np.ndar
         return {k: v for k, v in digits.items() if k.endswith("_hp")}
     if kind == "stat":
         return {k: v for k, v in digits.items() if k.endswith("_stat")}
+    if kind == "door":
+        return {k: v for k, v in digits.items() if k.endswith("_door")}
+    if kind == "gold":
+        return {k: v for k, v in digits.items() if k.endswith("_gold")}
     # 'badge': bare digits plus the % / / symbols on cell badges.
     return {k: v for k, v in digits.items() if k.isdigit() or k in ("percent", "slash")}
+
+
+def recognize_hud(
+    image: np.ndarray,
+    door_digits: dict[str, np.ndarray],
+    gold_digits: dict[str, np.ndarray],
+    base_scale: float,
+) -> tuple[int | None, Door | None]:
+    """Read the gold counter and door (exit) progress from the right-side panel.
+
+    Best-effort, like the player stats: needs the side panel on screen and digit
+    templates in the HUD fonts. Returns (gold, Door|None) with None for anything
+    that couldn't be read.
+    """
+    h, w = image.shape[:2]
+
+    # Door "X/Y" badge: stacked vertically in the medallion on the locked door.
+    door_region = image[int(h * 0.57):int(h * 0.66), int(w * 0.885):int(w * 0.918)]
+    door_text = _scan_digits(door_region, door_digits, HUD_DIGIT_THRESHOLD, base_scale)
+    door_nums = [c for c in door_text if c.isdigit()]
+    door = None
+    if door_nums:
+        required = int(door_nums[-1]) if len(door_nums) >= 2 else None
+        door = Door(cleared=int(door_nums[0]), required=required)
+
+    # Gold counter on the frog's sign, lower-right; read left-to-right.
+    gold_region = image[int(h * 0.86):int(h * 0.94), int(w * 0.88):int(w * 0.95)]
+    gold_scan = _scan_digits(gold_region, gold_digits, HUD_DIGIT_THRESHOLD, base_scale)
+    gold_text = "".join(c for c in gold_scan if c.isdigit())
+    gold = int(gold_text) if gold_text else None
+
+    return gold, door
 
 
 def recognize_state(image: np.ndarray, layout: GridLayout) -> GameState:
@@ -279,6 +322,13 @@ def recognize_state(image: np.ndarray, layout: GridLayout) -> GameState:
     # to this capture's width so matchTemplate works at any window size.
     base_scale = image.shape[1] / TEMPLATE_SOURCE_WIDTH
 
+    gold, door = recognize_hud(
+        image,
+        _digit_subset(digit_templates, "door"),
+        _digit_subset(digit_templates, "gold"),
+        base_scale,
+    )
+
     return GameState(
         board=recognize_board(
             image, layout, badge_icon_templates, _digit_subset(digit_templates, "badge"), base_scale
@@ -289,4 +339,6 @@ def recognize_state(image: np.ndarray, layout: GridLayout) -> GameState:
             _digit_subset(digit_templates, "stat"),
             base_scale,
         ),
+        gold=gold,
+        door=door,
     )

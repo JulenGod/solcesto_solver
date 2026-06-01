@@ -78,6 +78,10 @@ def test_recognize_state_on_bundled_screenshot():
     assert state.player.sword == 2
     assert state.player.magic == 1
 
+    # Right-panel HUD: gold counter and door (exit) progress.
+    assert state.gold == 0
+    assert state.door is not None and state.door.cleared == 0
+
 
 @pytest.mark.skipif(
     not (FIXTURES_DIR / "screenshot_windowed.png").exists(),
@@ -109,3 +113,7 @@ def test_recognize_state_on_windowed_capture():
     assert state.player.max_hp == 5
     assert state.player.sword == 2
     assert state.player.magic == 1
+
+    # HUD counters read at this resolution too (proves multi-scale on the door/gold).
+    assert state.gold == 0
+    assert state.door is not None and state.door.cleared == 0

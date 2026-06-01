@@ -35,8 +35,22 @@ class Player(BaseModel):
     magic: int = 0
 
 
+class Door(BaseModel):
+    """Exit progress shown on the right-panel door: clear `required` tiles to open it.
+
+    `cleared` is how many you've broken so far (the top number of the "0/5" badge),
+    `required` is the total needed (the bottom number). Either may be None if the
+    digit couldn't be read.
+    """
+
+    cleared: int | None = None
+    required: int | None = None
+
+
 class GameState(BaseModel):
-    """Full game state: 4x4 board plus the player."""
+    """Full game state: the 4x4 board, the player, and run-level counters."""
 
     board: list[list[Cell]]
     player: Player
+    gold: int | None = None   # current gold (the frog's counter); None if unread.
+    door: Door | None = None  # exit progress; None if unread.
