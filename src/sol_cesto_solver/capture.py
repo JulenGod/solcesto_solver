@@ -43,8 +43,11 @@ def find_window(title_hint: str = "Sol Cesto") -> WindowBounds:
     Picks the largest match if several windows qualify. Raises WindowNotFound if
     no candidate exists, or all candidates are minimized/zero-sized.
     """
-    needle = title_hint.lower()
-    candidates = [w for w in gw.getAllWindows() if needle in w.title.lower()]
+    # Normalise away case and spaces so the default "Sol Cesto" still matches the
+    # actual window title "SolCesto" (also "sol_cesto", etc.). Spaces only — keeping
+    # hyphens avoids matching unrelated windows like "...sol-cesto-solver - VS Code".
+    needle = title_hint.lower().replace(" ", "")
+    candidates = [w for w in gw.getAllWindows() if needle in w.title.lower().replace(" ", "")]
     if not candidates:
         raise WindowNotFoundError(f"No window with title containing {title_hint!r}.")
 

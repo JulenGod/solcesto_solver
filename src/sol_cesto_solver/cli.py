@@ -22,7 +22,8 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--window",
         default="Sol Cesto",
-        help="Substring of the game window title (default: %(default)s).",
+        help="Game window title to find; case- and space-insensitive substring "
+        "(default: %(default)s).",
     )
     parser.add_argument(
         "--watch",
