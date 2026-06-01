@@ -28,6 +28,9 @@ debug-*.json
 # Training frames collected by scripts/train_capture.py
 captures/
 
+# Monster reference sprites pulled from the wiki (game assets — kept local)
+references/
+
 # IDEs
 .vscode/
 .idea/
