@@ -252,3 +252,54 @@ def test_no_door_leaves_route_fields_empty():
     assert rec.tiles_remaining is None
     assert rec.door_open is False
     assert rec.best_case_hp_to_open is None
+
+
+# ---------------------------------------------------------------------------
+# species mechanics (mechanics.py) integration
+# ---------------------------------------------------------------------------
+
+def test_black_hole_attracts_extra_landing_probability():
+    # A Black Hole pulls harder, so its cell exceeds the uniform 0.25 and the
+    # others fall below it.
+    cells = [Cell(content="magic", value=4, species="black_hole"), _safe(), _safe(), _safe()]
+    probs = landing_probabilities(cells)
+    # Weights 2, 1, 1, 1 -> total 5.
+    assert probs[0] == pytest.approx(2 / 5)
+    assert probs[1] == pytest.approx(1 / 5)
+    assert sum(probs) == pytest.approx(1.0)
+
+
+def test_cursed_strawberry_makes_heals_toxic_in_recommendation():
+    from sol_cesto_solver.mechanics import analyze_board
+
+    heal_cell = Cell(content="heal", value=2)
+    # Without the curse a heal is good for a wounded player.
+    assert evaluate_cell(heal_cell, _player(hp=2), ctx=analyze_board([[heal_cell]])) == 2.0
+    # With a Cursed Strawberry on the board the same heal turns toxic (-1).
+    cursed = [heal_cell, Cell(content="magic", value=2, species="cursed_strawberry")]
+    ctx = analyze_board([cursed])
+    assert evaluate_cell(heal_cell, _player(hp=2), ctx=ctx) == -1.0
+
+
+def test_breaking_a_fledgling_costs_more_when_hawks_are_present():
+    from sol_cesto_solver.mechanics import analyze_board
+
+    fledgling = Cell(content="physical", value=1, species="fledgling")
+    player = _player(sword=5)  # strong enough that the Fledgling itself deals 0
+    # Alone: no face damage and no hidden cost.
+    assert evaluate_cell(fledgling, player, ctx=analyze_board([[fledgling]])) == 0.0
+    # With two Hawks on the board, killing it buffs both -> -2 hidden cost.
+    board = [[fledgling, Cell(content="physical", value=3, species="hawk"),
+              Cell(content="physical", value=3, species="hawk")]]
+    assert evaluate_cell(fledgling, player, ctx=analyze_board(board)) == -2.0
+
+
+def test_recommend_avoids_the_fledgling_row_when_hawks_threaten():
+    # Both rows look free at face value (player one-shots everything), but breaking
+    # the Fledgling row buffs the Hawks, so the plain row is preferred.
+    player = _player(sword=5)
+    hawk = Cell(content="physical", value=3, species="hawk")
+    fledgling_row = [Cell(content="physical", value=1, species="fledgling"), hawk, _safe(), _safe()]
+    plain_row = [Cell(content="physical", value=1), _safe(), _safe(), _safe()]
+    rec = recommend_row(_state([fledgling_row, plain_row], player))
+    assert rec.best_row == 1

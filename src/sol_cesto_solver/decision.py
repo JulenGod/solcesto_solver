@@ -19,6 +19,13 @@ are assumed safe.
 """
 from pydantic import BaseModel
 
+from .mechanics import (
+    TOXIC_HEAL_LOSS,
+    BoardContext,
+    analyze_board,
+    landing_attraction,
+    species_hp_adjustment,
+)
 from .state import Cell, GameState, Modifiers, Player
 
 # When a treasure turns out to be a mimic, assume a moderate HP loss. We don't
@@ -59,8 +66,27 @@ class Recommendation(BaseModel):
     best_case_hp_to_open: float | None = None  # HP change if you clear the cheapest remaining tiles
 
 
-def evaluate_cell(cell: Cell, player: Player, mimic_chance: float = 0.0) -> float:
-    """HP change if the player lands on this cell. Negative = HP lost."""
+def evaluate_cell(
+    cell: Cell,
+    player: Player,
+    mimic_chance: float = 0.0,
+    ctx: BoardContext | None = None,
+) -> float:
+    """HP change if the player lands on this cell. Negative = HP lost.
+
+    `ctx` carries cross-cell mechanics (see mechanics.py): a Cursed Strawberry
+    turns heals toxic, and killing a Fledgling buffs every Hawk. When omitted the
+    cell is scored in isolation (the original per-cell behaviour).
+    """
+    change = _content_hp_change(cell, player, mimic_chance, ctx)
+    if ctx is not None and cell.species:
+        change += species_hp_adjustment(cell, ctx)
+    return change
+
+
+def _content_hp_change(
+    cell: Cell, player: Player, mimic_chance: float, ctx: BoardContext | None
+) -> float:
     match cell.content:
         case "physical":
             if cell.value is None:
@@ -71,6 +97,8 @@ def evaluate_cell(cell: Cell, player: Player, mimic_chance: float = 0.0) -> floa
                 return 0.0
             return float(-max(0, cell.value - player.magic))
         case "heal":
+            if ctx is not None and ctx.heals_toxic:
+                return -TOXIC_HEAL_LOSS  # a Cursed Strawberry makes every heal toxic
             if cell.value is None:
                 return 0.0
             room = player.max_hp - player.hp
@@ -107,12 +135,15 @@ def landing_probabilities(cells: list[Cell], modifiers: Modifiers | None = None)
     Cleared tiles (content 'empty') can't be landed on again, so they get zero
     weight and the row renormalises over the remaining tiles — clearing one of
     four 25% tiles leaves three at ~33%. Each remaining cell weighs
-    (1 + its content modifier). A fully-cleared row returns all zeros.
+    (1 + its content modifier + its species' landing attraction): an attracting
+    monster like a Black Hole or Mimic pulls harder than a plain tile. A
+    fully-cleared row returns all zeros.
     """
     if not cells:
         return []
     weights = [
-        0.0 if c.content == "empty" else max(0.0, 1.0 + _landing_bias(c.content, modifiers))
+        0.0 if c.content == "empty"
+        else max(0.0, 1.0 + _landing_bias(c.content, modifiers) + landing_attraction(c))
         for c in cells
     ]
     total = sum(weights)
@@ -127,6 +158,7 @@ def evaluate_row(
     player: Player,
     mimic_chance: float = 0.0,
     modifiers: Modifiers | None = None,
+    ctx: BoardContext | None = None,
 ) -> RowEvaluation:
     """Expected HP change if the player picks this row."""
     probs = landing_probabilities(cells, modifiers)
@@ -134,7 +166,7 @@ def evaluate_row(
         CellOutcome(
             col=i,
             landing_probability=probs[i],
-            hp_change=evaluate_cell(c, player, mimic_chance),
+            hp_change=evaluate_cell(c, player, mimic_chance, ctx),
         )
         for i, c in enumerate(cells)
     ]
@@ -149,7 +181,7 @@ def evaluate_row(
 
 
 def _best_case_hp_to_open(
-    state: GameState, tiles_remaining: int, mimic_chance: float
+    state: GameState, tiles_remaining: int, mimic_chance: float, ctx: BoardContext | None = None
 ) -> float:
     """Best-case HP change to open the door: clear the `tiles_remaining` cheapest tiles.
 
@@ -158,7 +190,7 @@ def _best_case_hp_to_open(
     board. The realistic cost is higher; the per-turn `best_row` is the practical move.
     """
     costs = sorted(
-        (evaluate_cell(cell, state.player, mimic_chance)
+        (evaluate_cell(cell, state.player, mimic_chance, ctx)
          for row in state.board for cell in row
          if cell.content != "empty"),  # already-cleared tiles can't be cleared again
         reverse=True,  # least loss (0 / heals) first, biggest loss last
@@ -174,8 +206,9 @@ def recommend_row(state: GameState, mimic_chance: float = 0.0) -> Recommendation
     better worst-case, then lower row index. The door fields report how far the
     objective is and an optimistic HP estimate for the whole route.
     """
+    ctx = analyze_board(state.board)
     rows = [
-        evaluate_row(r, cells, state.player, mimic_chance, state.modifiers)
+        evaluate_row(r, cells, state.player, mimic_chance, state.modifiers, ctx)
         for r, cells in enumerate(state.board)
     ]
     # You can only make progress on rows that still have an uncleared tile; a
@@ -197,7 +230,7 @@ def recommend_row(state: GameState, mimic_chance: float = 0.0) -> Recommendation
         tiles_remaining = max(0, door.required - door.cleared)
         door_open = tiles_remaining == 0
         if tiles_remaining > 0:
-            best_case = _best_case_hp_to_open(state, tiles_remaining, mimic_chance)
+            best_case = _best_case_hp_to_open(state, tiles_remaining, mimic_chance, ctx)
 
     return Recommendation(
         best_row=best.row,
