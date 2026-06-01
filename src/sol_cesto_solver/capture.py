@@ -56,7 +56,46 @@ def find_window(title_hint: str = "Sol Cesto") -> WindowBounds:
         raise WindowNotFoundError(f"Window matching {title_hint!r} is minimized or zero-sized.")
 
     w = max(visible, key=lambda w: w.width * w.height)
+    return _bounds_for_window(w)
+
+
+def _bounds_for_window(w) -> WindowBounds:
+    """Prefer the client area (content only) over the full window rect.
+
+    Capturing the client area excludes the title bar/borders, so the captured
+    image matches the content-only coordinate system the detector is tuned on.
+    Falls back to the window rect when the client rect can't be read (and that
+    fallback is what the unit tests' fake windows exercise).
+    """
+    hwnd = getattr(w, "_hWnd", None)
+    if hwnd:
+        client = _client_bounds(int(hwnd))
+        if client is not None:
+            return client
     return WindowBounds(left=w.left, top=w.top, width=w.width, height=w.height)
+
+
+def _client_bounds(hwnd: int) -> WindowBounds | None:
+    """Screen-space bounds of a window's client area, via Win32. None on failure."""
+    try:
+        import ctypes
+        from ctypes import wintypes
+
+        user32 = ctypes.windll.user32
+        user32.GetClientRect.argtypes = [wintypes.HWND, ctypes.POINTER(wintypes.RECT)]
+        user32.ClientToScreen.argtypes = [wintypes.HWND, ctypes.POINTER(wintypes.POINT)]
+
+        rect = wintypes.RECT()
+        origin = wintypes.POINT(0, 0)
+        if not user32.GetClientRect(hwnd, ctypes.byref(rect)):
+            return None
+        if not user32.ClientToScreen(hwnd, ctypes.byref(origin)):
+            return None
+        if rect.right <= 0 or rect.bottom <= 0:
+            return None
+        return WindowBounds(left=origin.x, top=origin.y, width=rect.right, height=rect.bottom)
+    except (OSError, AttributeError):
+        return None
 
 
 def capture(bounds: WindowBounds) -> np.ndarray:

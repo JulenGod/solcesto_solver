@@ -54,6 +54,22 @@ def _build_parser() -> argparse.ArgumentParser:
         ),
     )
     parser.add_argument(
+        "--sword", type=int, metavar="N",
+        help="Override the detected sword (physical) stat — use if stat OCR misreads.",
+    )
+    parser.add_argument(
+        "--magic", type=int, metavar="N",
+        help="Override the detected magic stat.",
+    )
+    parser.add_argument(
+        "--hp", type=int, metavar="N",
+        help="Override the detected current HP.",
+    )
+    parser.add_argument(
+        "--max-hp", type=int, metavar="N",
+        help="Override the detected max HP.",
+    )
+    parser.add_argument(
         "--overlay",
         action="store_true",
         help=(
@@ -63,6 +79,18 @@ def _build_parser() -> argparse.ArgumentParser:
         ),
     )
     return parser
+
+
+def _apply_stat_overrides(state, args: argparse.Namespace) -> None:
+    """Let explicit CLI flags override best-effort player-stat detection."""
+    if args.sword is not None:
+        state.player.sword = args.sword
+    if args.magic is not None:
+        state.player.magic = args.magic
+    if args.hp is not None:
+        state.player.hp = args.hp
+    if args.max_hp is not None:
+        state.player.max_hp = args.max_hp
 
 
 def _grab_image(args: argparse.Namespace) -> np.ndarray:
@@ -87,6 +115,7 @@ def _run_once(args: argparse.Namespace) -> int:
     save_calibration(layout)
 
     state = recognize_state(image, layout)
+    _apply_stat_overrides(state, args)
     recommendation = recommend_row(state, mimic_chance=args.mimic_chance)
 
     output = {
@@ -128,6 +157,7 @@ def _run_overlay(args: argparse.Namespace) -> int:
         layout = load_calibration((w, h)) or detect_board(image)
         save_calibration(layout)
         state = recognize_state(image, layout)
+        _apply_stat_overrides(state, args)
         recommendation = recommend_row(state, mimic_chance=args.mimic_chance)
         return bounds, layout, recommendation
 
@@ -139,6 +169,12 @@ def _run_overlay(args: argparse.Namespace) -> int:
 
 def main(argv: list[str] | None = None) -> int:
     args = _build_parser().parse_args(argv)
+
+    # Make capture (and the overlay) operate in physical pixels on scaled displays,
+    # so mss/pygetwindow grab the full window instead of a clipped logical region.
+    # Must happen before any capture. Best-effort no-op off Windows.
+    from .overlay import enable_dpi_awareness
+    enable_dpi_awareness()
 
     if args.overlay:
         return _run_overlay(args)
