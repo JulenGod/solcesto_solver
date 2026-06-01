@@ -52,6 +52,15 @@ def _build_parser() -> argparse.ArgumentParser:
             "levels). Raise on later levels where mimics start appearing."
         ),
     )
+    parser.add_argument(
+        "--overlay",
+        action="store_true",
+        help=(
+            "Show a live, click-through overlay on top of the game that frames the "
+            "board and highlights the recommended row. Windows only; the game must "
+            "run windowed / borderless (not exclusive fullscreen). Ctrl-C to stop."
+        ),
+    )
     return parser
 
 
@@ -92,8 +101,46 @@ def _run_once(args: argparse.Namespace) -> int:
     return 0
 
 
+def _run_overlay(args: argparse.Namespace) -> int:
+    """Drive the live on-screen overlay until the user stops it."""
+    if args.from_file is not None:
+        print("error: --overlay needs the live game window; drop --from-file", file=sys.stderr)
+        return 2
+
+    # Imported lazily: tkinter is only needed for the overlay, and this keeps the
+    # CLI importable (and the JSON modes working) on machines without a display.
+    from .overlay import Overlay
+
+    try:
+        overlay = Overlay()
+    except Exception as e:  # noqa: BLE001 - report any GUI/Win32 failure to the user
+        print(f"error: could not create overlay window: {e}", file=sys.stderr)
+        return 2
+
+    def poll():
+        try:
+            bounds = find_window(args.window)
+            image = capture(bounds)
+        except CaptureError:
+            return None  # game window gone/minimized -> overlay clears this tick
+        h, w = image.shape[:2]
+        layout = load_calibration((w, h)) or detect_board(image)
+        save_calibration(layout)
+        state = recognize_state(image, layout)
+        recommendation = recommend_row(state, mimic_chance=args.mimic_chance)
+        return bounds, layout, recommendation
+
+    interval = args.watch if args.watch is not None else 1.0
+    print(f"overlay running (refresh every {interval:.1f}s). Ctrl-C to stop.", file=sys.stderr)
+    overlay.run(poll, interval=interval)
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     args = _build_parser().parse_args(argv)
+
+    if args.overlay:
+        return _run_overlay(args)
 
     if args.watch is None:
         return _run_once(args)
