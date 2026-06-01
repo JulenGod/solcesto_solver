@@ -19,10 +19,18 @@ TEMPLATES_DIR = Path(__file__).resolve().parents[2] / "templates"
 
 BADGE_ICON_THRESHOLD = 0.60
 DIGIT_THRESHOLD = 0.85
-# HP digits on the heart vary in size between the two "5"s (perspective styling),
-# so the lower one often matches the upper-extracted template at ~0.65–0.70.
-# Looser threshold is safe here because the HP region contains only digits and "/".
-HP_DIGIT_THRESHOLD = 0.60
+# Each on-screen number uses a different font, so we match each region against only
+# its own font's templates (below) to avoid cross-contamination, and give the HP
+# heart its own looser threshold (its two stacked "5"s vary in size with perspective).
+HP_DIGIT_THRESHOLD = 0.55
+STAT_DIGIT_THRESHOLD = 0.70
+
+# Every template was cropped from one 2552px-wide screenshot. cv2.matchTemplate is
+# NOT scale-invariant, so a capture at a different window size would fail to match.
+# We rescale templates by how much the current capture differs from that source
+# width, and try a few nearby scales to absorb aspect-ratio / rounding drift. This
+# makes detection work at any window size or display scaling.
+TEMPLATE_SOURCE_WIDTH = 2552
 
 # Maps badge-icon template filename stem to the cell's content type.
 # Multiple stems can map to the same content (useful for visual variants — e.g. a
@@ -65,22 +73,44 @@ def load_templates(subdir: str) -> dict[str, np.ndarray]:
     return templates
 
 
+def _scaled(template: np.ndarray, scale: float) -> np.ndarray:
+    """Resize a template by `scale` (>0). Returns the original if scale ≈ 1."""
+    if abs(scale - 1.0) < 1e-3:
+        return template
+    h, w = template.shape[:2]
+    new_w, new_h = max(1, round(w * scale)), max(1, round(h * scale))
+    interp = cv2.INTER_AREA if scale < 1.0 else cv2.INTER_LINEAR
+    return cv2.resize(template, (new_w, new_h), interpolation=interp)
+
+
+def _scale_candidates(base_scale: float) -> tuple[float, ...]:
+    """A few scales bracketing the resolution-derived `base_scale`."""
+    return tuple(base_scale * f for f in (0.85, 0.92, 1.0, 1.08, 1.15))
+
+
 def _best_icon(
     image: np.ndarray,
     templates: dict[str, np.ndarray],
     threshold: float,
+    base_scale: float,
 ) -> str | None:
-    """Return the highest-scoring template name above `threshold`, or None."""
+    """Return the highest-scoring template name above `threshold`, or None.
+
+    Each template is matched at several scales around `base_scale`, keeping the
+    best score (matchTemplate is not scale-invariant).
+    """
     best_name: str | None = None
     best_score = threshold
     for name, tpl in templates.items():
-        if tpl.shape[0] > image.shape[0] or tpl.shape[1] > image.shape[1]:
-            continue
-        result = cv2.matchTemplate(image, tpl, cv2.TM_CCOEFF_NORMED)
-        _, score, _, _ = cv2.minMaxLoc(result)
-        if score > best_score:
-            best_score = float(score)
-            best_name = name
+        for scale in _scale_candidates(base_scale):
+            scaled = _scaled(tpl, scale)
+            if scaled.shape[0] > image.shape[0] or scaled.shape[1] > image.shape[1]:
+                continue
+            result = cv2.matchTemplate(image, scaled, cv2.TM_CCOEFF_NORMED)
+            _, score, _, _ = cv2.minMaxLoc(result)
+            if score > best_score:
+                best_score = float(score)
+                best_name = name
     return best_name
 
 
@@ -88,29 +118,32 @@ def _scan_digits(
     image: np.ndarray,
     templates: dict[str, np.ndarray],
     threshold: float,
+    base_scale: float,
 ) -> str:
     """Find every digit/symbol match above threshold, NMS in 2D, read top-down + L-to-R.
 
-    Reading order matters: HP on the heart is stacked vertically ("5" / "/" / "5"),
-    while "25%" badges are laid out horizontally. Sorting by (y, x) gets both right:
-    digits at very different y values are read top-to-bottom; digits at the same y
-    fall back to left-to-right.
+    Each template is matched at several scales around `base_scale`. Reading order
+    matters: HP on the heart is stacked vertically ("5" / "/" / "5"), while "25%"
+    badges are horizontal. Sorting by (y, x) handles both.
     """
     detections: list[tuple[int, int, str, float]] = []
 
     for name, tpl in templates.items():
-        if tpl.shape[0] > image.shape[0] or tpl.shape[1] > image.shape[1]:
-            continue
-        result = cv2.matchTemplate(image, tpl, cv2.TM_CCOEFF_NORMED)
-        ys, xs = np.where(result >= threshold)
         char = SYMBOL_NAMES.get(name, name)
-        for y, x in zip(ys, xs, strict=False):
-            detections.append((int(x), int(y), char, float(result[y, x])))
+        for scale in _scale_candidates(base_scale):
+            scaled = _scaled(tpl, scale)
+            if scaled.shape[0] > image.shape[0] or scaled.shape[1] > image.shape[1]:
+                continue
+            result = cv2.matchTemplate(image, scaled, cv2.TM_CCOEFF_NORMED)
+            ys, xs = np.where(result >= threshold)
+            for y, x in zip(ys, xs, strict=False):
+                detections.append((int(x), int(y), char, float(result[y, x])))
 
     # 2D NMS: drop weaker detections that overlap a kept one in BOTH x and y.
+    # Radius scales with the capture so cross-scale duplicates collapse cleanly.
     detections.sort(key=lambda d: -d[3])
     kept: list[tuple[int, int, str]] = []
-    nms_radius = 6
+    nms_radius = max(3, round(6 * base_scale))
     for x, y, ch, _ in detections:
         if all(abs(x - kx) > nms_radius or abs(y - ky) > nms_radius for kx, ky, _ in kept):
             kept.append((x, y, ch))
@@ -140,6 +173,7 @@ def recognize_cell(
     cell_image: np.ndarray,
     badge_icon_templates: dict[str, np.ndarray],
     digit_templates: dict[str, np.ndarray],
+    base_scale: float,
 ) -> Cell:
     """Identify the cell by which badge icon overlays it.
 
@@ -151,12 +185,12 @@ def recognize_cell(
     # Badges and their "?" sparkles live in the top half of the cell.
     top_region = cell_image[: max(1, h // 2), :]
 
-    badge_name = _best_icon(top_region, badge_icon_templates, BADGE_ICON_THRESHOLD)
+    badge_name = _best_icon(top_region, badge_icon_templates, BADGE_ICON_THRESHOLD, base_scale)
     content: CellContent = BADGE_TO_CONTENT.get(badge_name or "", "empty")
 
     value: int | None = None
     if content in {"physical", "magic", "heal"}:
-        digit_text = _scan_digits(top_region, digit_templates, DIGIT_THRESHOLD)
+        digit_text = _scan_digits(top_region, digit_templates, DIGIT_THRESHOLD, base_scale)
         digits = [c for c in digit_text if c.isdigit()]
         if digits:
             value = int(digits[0])
@@ -169,6 +203,7 @@ def recognize_board(
     layout: GridLayout,
     badge_icon_templates: dict[str, np.ndarray],
     digit_templates: dict[str, np.ndarray],
+    base_scale: float,
 ) -> list[list[Cell]]:
     """Recognize all 16 cells of the 4x4 board."""
     return [
@@ -177,6 +212,7 @@ def recognize_board(
                 layout.crop_cell(image, r, c),
                 badge_icon_templates,
                 digit_templates,
+                base_scale,
             )
             for c in range(COLS)
         ]
@@ -184,26 +220,35 @@ def recognize_board(
     ]
 
 
-def recognize_player(image: np.ndarray, digit_templates: dict[str, np.ndarray]) -> Player:
-    """Read HP, sword and magic from fixed regions of the right-side UI panel."""
+def recognize_player(
+    image: np.ndarray,
+    hp_digits: dict[str, np.ndarray],
+    stat_digits: dict[str, np.ndarray],
+    base_scale: float,
+) -> Player:
+    """Read HP, sword and magic from fixed regions of the right-side UI panel.
+
+    HP/sword/magic detection is best-effort: it needs digit templates in the right
+    font, and the side panel only fits on-screen when the whole game window is
+    visible. The CLI exposes --sword/--magic/--hp/--max-hp to override these.
+    """
     h, w = image.shape[:2]
 
     # "5/5" sits over the red heart in the top-right side panel.
-    hp_region = image[int(h * 0.02):int(h * 0.20), int(w * 0.83):int(w * 0.95)]
-    hp_text = _scan_digits(hp_region, digit_templates, HP_DIGIT_THRESHOLD)
+    hp_region = image[int(h * 0.02):int(h * 0.22), int(w * 0.83):int(w * 0.99)]
+    hp_text = _scan_digits(hp_region, hp_digits, HP_DIGIT_THRESHOLD, base_scale)
     hp_parsed = _parse_hp(hp_text)
     if hp_parsed is None:
         # The slash on the heart is tiny and diagonal — easy to miss. If we have at
         # least two digits, assume current = first, max = last.
-        hp_digits = [c for c in hp_text if c.isdigit()]
-        if len(hp_digits) >= 2:
-            hp_parsed = (int(hp_digits[0]), int(hp_digits[-1]))
+        digits = [c for c in hp_text if c.isdigit()]
+        if len(digits) >= 2:
+            hp_parsed = (int(digits[0]), int(digits[-1]))
     hp, max_hp = hp_parsed if hp_parsed else (0, 0)
 
-    # Sword + magic numbers sit on a thin horizontal stat bar above the dungeon door,
-    # on the very right edge of the side panel.
-    stats_region = image[int(h * 0.34):int(h * 0.40), int(w * 0.92):int(w * 0.99)]
-    stats_text = _scan_digits(stats_region, digit_templates, DIGIT_THRESHOLD)
+    # Sword + magic numbers sit next to their icons in the lower-right side panel.
+    stats_region = image[int(h * 0.32):int(h * 0.43), int(w * 0.88):w]
+    stats_text = _scan_digits(stats_region, stat_digits, STAT_DIGIT_THRESHOLD, base_scale)
     digits = [c for c in stats_text if c.isdigit()]
     sword = int(digits[0]) if digits else 0
     magic = int(digits[1]) if len(digits) > 1 else 0
@@ -211,12 +256,37 @@ def recognize_player(image: np.ndarray, digit_templates: dict[str, np.ndarray]) 
     return Player(hp=hp, max_hp=max_hp, sword=sword, magic=magic)
 
 
+def _digit_subset(digits: dict[str, np.ndarray], kind: str) -> dict[str, np.ndarray]:
+    """Select the templates for one font: 'badge' (cells), 'hp', or 'stat'.
+
+    Each on-screen number uses a distinct font; matching a region only against its
+    own font avoids false positives (e.g. a cell's "3" leaking into the HP read).
+    """
+    if kind == "hp":
+        return {k: v for k, v in digits.items() if k.endswith("_hp")}
+    if kind == "stat":
+        return {k: v for k, v in digits.items() if k.endswith("_stat")}
+    # 'badge': bare digits plus the % / / symbols on cell badges.
+    return {k: v for k, v in digits.items() if k.isdigit() or k in ("percent", "slash")}
+
+
 def recognize_state(image: np.ndarray, layout: GridLayout) -> GameState:
     """Run the full detection pipeline and return a GameState."""
     badge_icon_templates = load_templates("icons")
     digit_templates = load_templates("digits")
 
+    # All templates came from a TEMPLATE_SOURCE_WIDTH-wide screenshot; rescale them
+    # to this capture's width so matchTemplate works at any window size.
+    base_scale = image.shape[1] / TEMPLATE_SOURCE_WIDTH
+
     return GameState(
-        board=recognize_board(image, layout, badge_icon_templates, digit_templates),
-        player=recognize_player(image, digit_templates),
+        board=recognize_board(
+            image, layout, badge_icon_templates, _digit_subset(digit_templates, "badge"), base_scale
+        ),
+        player=recognize_player(
+            image,
+            _digit_subset(digit_templates, "hp"),
+            _digit_subset(digit_templates, "stat"),
+            base_scale,
+        ),
     )
