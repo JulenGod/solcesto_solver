@@ -76,6 +76,28 @@ def format_panel_lines(recommendation: Recommendation) -> list[str]:
     return lines
 
 
+def enable_dpi_awareness() -> None:
+    """Make the process per-monitor DPI aware (Windows). Best-effort no-op elsewhere.
+
+    Without this, Tkinter draws in *logical* (scaled) pixels while mss/pygetwindow
+    report *physical* pixels, so on a display scaled above 100% the overlay lands
+    at the wrong place/size — usually off-screen. Must run before the first Tk
+    window is created.
+    """
+    import ctypes
+
+    # Try per-monitor DPI awareness (Win 8.1+), then the older system-DPI call.
+    for set_aware in (
+        lambda: ctypes.windll.shcore.SetProcessDpiAwareness(2),
+        lambda: ctypes.windll.user32.SetProcessDPIAware(),
+    ):
+        try:
+            set_aware()
+            return
+        except (AttributeError, OSError):
+            continue
+
+
 class Overlay:
     """A transparent, click-through, always-on-top Tkinter overlay (Windows).
 
@@ -98,6 +120,10 @@ class Overlay:
     ROW_WIDTH = 6
 
     def __init__(self) -> None:
+        # Must precede the first Tk window so Tk matches the physical-pixel
+        # coordinates that mss/pygetwindow report (fixes scaled displays).
+        enable_dpi_awareness()
+
         import tkinter as tk
 
         self._running = False
