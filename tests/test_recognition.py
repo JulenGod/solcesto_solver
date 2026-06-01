@@ -105,6 +105,8 @@ def test_recognize_state_on_windowed_capture():
     assert state.board[1][1].content == "magic"
     assert state.board[1][1].value == 1
     assert state.board[2][1].content == "treasure"
+    # A shadowed chest whose "?" badge is too dark to match — rescued by the gold pile.
+    assert state.board[1][3].content == "treasure"
     assert state.board[3][3].content == "heal"
     assert state.board[3][3].value == 1
 

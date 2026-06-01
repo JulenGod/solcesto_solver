@@ -18,6 +18,10 @@ from .state import Cell, CellContent, Door, GameState, Player
 TEMPLATES_DIR = Path(__file__).resolve().parents[2] / "templates"
 
 BADGE_ICON_THRESHOLD = 0.60
+# Secondary treasure cue: a chest's gold pile (bottom of the cell). Treasure piles
+# score ~0.72–0.91; monsters / slimes / hover-preview bubbles score ≤0.33, so 0.55
+# separates them cleanly and rescues chests whose "?" badge is too dark to match.
+GOLDPILE_THRESHOLD = 0.55
 DIGIT_THRESHOLD = 0.85
 # Each on-screen number uses a different font, so we match each region against only
 # its own font's templates (below) to avoid cross-contamination, and give the HP
@@ -41,6 +45,7 @@ BADGE_TO_CONTENT: dict[str, CellContent] = {
     "magic": "magic",
     "heart": "heal",
     "question": "treasure",
+    "question_dark": "treasure",  # the "?" badge on a shadowed/darker chest
 }
 
 # Digit templates whose stems aren't directly usable as characters.
@@ -179,13 +184,16 @@ def _parse_hp(s: str) -> tuple[int, int] | None:
 def recognize_cell(
     cell_image: np.ndarray,
     badge_icon_templates: dict[str, np.ndarray],
+    goldpile_templates: dict[str, np.ndarray],
     digit_templates: dict[str, np.ndarray],
     base_scale: float,
 ) -> Cell:
-    """Identify the cell by which badge icon overlays it.
+    """Identify the cell by its badge icon, with the gold pile as a chest fallback.
 
-    Scans the top half of the cell for a badge icon (sword/magic/heart/question),
-    then reads the digit next to it. The creature sprite below is ignored entirely.
+    Scans the top half for a badge (sword/magic/heart/question) and reads the
+    digit next to it. A shadowed chest can fail the "?" match, so when no badge is
+    found we check the bottom half for the chest's gold pile — a robust treasure
+    cue that monsters and the hover-preview bubbles don't have.
     """
     h, w = cell_image.shape[:2]
 
@@ -194,6 +202,11 @@ def recognize_cell(
 
     badge_name = _best_icon(top_region, badge_icon_templates, BADGE_ICON_THRESHOLD, base_scale)
     content: CellContent = BADGE_TO_CONTENT.get(badge_name or "", "empty")
+
+    if content == "empty" and goldpile_templates:
+        bottom_region = cell_image[h // 2:, :]
+        if _best_icon(bottom_region, goldpile_templates, GOLDPILE_THRESHOLD, base_scale):
+            content = "treasure"
 
     value: int | None = None
     if content in {"physical", "magic", "heal"}:
@@ -209,6 +222,7 @@ def recognize_board(
     image: np.ndarray,
     layout: GridLayout,
     badge_icon_templates: dict[str, np.ndarray],
+    goldpile_templates: dict[str, np.ndarray],
     digit_templates: dict[str, np.ndarray],
     base_scale: float,
 ) -> list[list[Cell]]:
@@ -218,6 +232,7 @@ def recognize_board(
             recognize_cell(
                 layout.crop_cell(image, r, c),
                 badge_icon_templates,
+                goldpile_templates,
                 digit_templates,
                 base_scale,
             )
@@ -315,7 +330,11 @@ def recognize_hud(
 
 def recognize_state(image: np.ndarray, layout: GridLayout) -> GameState:
     """Run the full detection pipeline and return a GameState."""
-    badge_icon_templates = load_templates("icons")
+    icon_templates = load_templates("icons")
+    # The gold pile is matched in the cell's bottom half (chest fallback), not as a
+    # top-of-cell badge, so keep it out of the badge set.
+    goldpile_templates = {k: v for k, v in icon_templates.items() if k == "goldpile"}
+    badge_icon_templates = {k: v for k, v in icon_templates.items() if k != "goldpile"}
     digit_templates = load_templates("digits")
 
     # All templates came from a TEMPLATE_SOURCE_WIDTH-wide screenshot; rescale them
@@ -331,7 +350,8 @@ def recognize_state(image: np.ndarray, layout: GridLayout) -> GameState:
 
     return GameState(
         board=recognize_board(
-            image, layout, badge_icon_templates, _digit_subset(digit_templates, "badge"), base_scale
+            image, layout, badge_icon_templates, goldpile_templates,
+            _digit_subset(digit_templates, "badge"), base_scale,
         ),
         player=recognize_player(
             image,
