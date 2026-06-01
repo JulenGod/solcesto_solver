@@ -43,10 +43,18 @@ class RowEvaluation(BaseModel):
 
 
 class Recommendation(BaseModel):
-    """Final pick plus the per-row breakdown that justifies it."""
+    """Final pick plus the per-row breakdown that justifies it.
+
+    The door fields frame the pick around the level objective: you must break
+    `required` tiles to open the exit, so the goal isn't pure avoidance — you
+    have to keep clearing tiles, as cheaply as possible, until the door opens.
+    """
 
     best_row: int
     rows: list[RowEvaluation]
+    tiles_remaining: int | None = None     # tiles still to break to open the door
+    door_open: bool = False                # objective already met (can exit)
+    best_case_hp_to_open: float | None = None  # HP change if you clear the cheapest remaining tiles
 
 
 def evaluate_cell(cell: Cell, player: Player, mimic_chance: float = 0.0) -> float:
@@ -133,10 +141,30 @@ def evaluate_row(
     )
 
 
-def recommend_row(state: GameState, mimic_chance: float = 0.0) -> Recommendation:
-    """Pick the row that maximises expected HP change.
+def _best_case_hp_to_open(
+    state: GameState, tiles_remaining: int, mimic_chance: float
+) -> float:
+    """Best-case HP change to open the door: clear the `tiles_remaining` cheapest tiles.
 
-    Tiebreakers (in order): better worst-case, then lower row index.
+    You can't choose the exact tile (landing is random), so this is an optimistic
+    floor — the HP you'd lose if you managed to break the least costly tiles on the
+    board. The realistic cost is higher; the per-turn `best_row` is the practical move.
+    """
+    costs = sorted(
+        (evaluate_cell(cell, state.player, mimic_chance)
+         for row in state.board for cell in row),
+        reverse=True,  # least loss (0 / heals) first, biggest loss last
+    )
+    return float(sum(costs[:tiles_remaining]))
+
+
+def recommend_row(state: GameState, mimic_chance: float = 0.0) -> Recommendation:
+    """Recommend the row to play toward opening the door with the least HP loss.
+
+    Each turn breaks one tile, so the practical move is the row with the smallest
+    expected HP loss (it makes the cheapest progress). Tiebreakers (in order):
+    better worst-case, then lower row index. The door fields report how far the
+    objective is and an optimistic HP estimate for the whole route.
     """
     rows = [
         evaluate_row(r, cells, state.player, mimic_chance, state.modifiers)
@@ -146,4 +174,21 @@ def recommend_row(state: GameState, mimic_chance: float = 0.0) -> Recommendation
         rows,
         key=lambda e: (e.expected_hp_change, e.worst_case_hp_change, -e.row),
     )
-    return Recommendation(best_row=best.row, rows=rows)
+
+    tiles_remaining: int | None = None
+    door_open = False
+    best_case: float | None = None
+    door = state.door
+    if door is not None and door.required is not None and door.cleared is not None:
+        tiles_remaining = max(0, door.required - door.cleared)
+        door_open = tiles_remaining == 0
+        if tiles_remaining > 0:
+            best_case = _best_case_hp_to_open(state, tiles_remaining, mimic_chance)
+
+    return Recommendation(
+        best_row=best.row,
+        rows=rows,
+        tiles_remaining=tiles_remaining,
+        door_open=door_open,
+        best_case_hp_to_open=best_case,
+    )

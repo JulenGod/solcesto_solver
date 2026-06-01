@@ -7,7 +7,7 @@ from sol_cesto_solver.decision import (
     landing_probabilities,
     recommend_row,
 )
-from sol_cesto_solver.state import Cell, GameState, Modifiers, Player
+from sol_cesto_solver.state import Cell, Door, GameState, Modifiers, Player
 
 
 def _player(hp: int = 5, max_hp: int = 5, sword: int = 2, magic: int = 1) -> Player:
@@ -203,3 +203,50 @@ def test_recommend_accounts_for_landing_bias():
     assert rec.best_row == 1
     # physical weight 3 of total 6 -> p=0.5; expected = 0.5 * -3 = -1.5.
     assert rec.rows[0].expected_hp_change == pytest.approx(-1.5)
+
+
+# ---------------------------------------------------------------------------
+# door / route objective
+# ---------------------------------------------------------------------------
+
+def test_reports_tiles_remaining_from_door():
+    cells = [Cell(content="empty") for _ in range(4)]
+    state = GameState(board=[cells, cells], player=_player(), door=Door(cleared=2, required=5))
+    rec = recommend_row(state)
+    assert rec.tiles_remaining == 3
+    assert rec.door_open is False
+
+
+def test_flags_open_door_when_objective_met():
+    cells = [Cell(content="empty") for _ in range(4)]
+    state = GameState(board=[cells, cells], player=_player(), door=Door(cleared=5, required=5))
+    rec = recommend_row(state)
+    assert rec.tiles_remaining == 0
+    assert rec.door_open is True
+    assert rec.best_case_hp_to_open is None  # nothing left to clear
+
+
+def test_best_case_hp_to_open_sums_cheapest_remaining_tiles():
+    # Costs with sword 2: empty 0, physical(3) -1, physical(4) -2, physical(5) -3.
+    row = [
+        Cell(content="empty"),
+        Cell(content="physical", value=3),
+        Cell(content="physical", value=4),
+        Cell(content="physical", value=5),
+    ]
+    state = GameState(
+        board=[row],
+        player=Player(hp=9, max_hp=9, sword=2, magic=0),
+        door=Door(cleared=0, required=2),
+    )
+    rec = recommend_row(state)
+    # The two cheapest tiles are the empty (0) and the -1 -> best case -1.
+    assert rec.best_case_hp_to_open == pytest.approx(-1.0)
+
+
+def test_no_door_leaves_route_fields_empty():
+    cells = [Cell(content="empty") for _ in range(4)]
+    rec = recommend_row(GameState(board=[cells], player=_player()))
+    assert rec.tiles_remaining is None
+    assert rec.door_open is False
+    assert rec.best_case_hp_to_open is None
