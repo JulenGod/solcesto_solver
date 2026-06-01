@@ -47,6 +47,12 @@ def species_features(cell_bgr: np.ndarray) -> np.ndarray:
 
 
 def _damage_matches(damage: str, value: int | None) -> bool:
+    """Exact match of the badge value to a species' base damage.
+
+    Buffs/debuffs that shift the *shown* value (the Drummer's +1 to neighbours, a
+    weaken's -1) are handled in recognize_board's second pass, not here, so the
+    prefilter stays precise for the common (unbuffed) cell.
+    """
     if value is None:
         return True
     nums = {int(x) for x in re.findall(r"\d+", damage)}
@@ -58,7 +64,7 @@ def _damage_matches(damage: str, value: int | None) -> bool:
 
 
 def candidate_species(content: str, value: int | None) -> list[str]:
-    """Monster keys whose attack class and damage are consistent with the badge."""
+    """Monster keys whose attack class and base damage match the badge."""
     want = {"physical": "strength", "magic": "magic"}.get(content)
     out = []
     for key, m in BESTIARY.items():

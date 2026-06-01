@@ -2,15 +2,18 @@
 from sol_cesto_solver.species import _damage_matches, candidate_species
 
 
-def test_damage_matches_exact_and_variants():
+def test_damage_matches_is_exact():
+    # Buffs/debuffs are handled in recognize_board, so the prefilter is exact.
     assert _damage_matches("3", 3)
+    assert not _damage_matches("3", 4)
     assert not _damage_matches("3", 2)
-    assert _damage_matches("3+", 4)      # "3 or more"
+    assert _damage_matches("3+", 3)     # "3 or more"
+    assert _damage_matches("3+", 6)
     assert not _damage_matches("3+", 2)
-    assert _damage_matches("1/4", 1)     # swaps between 1 and 4
+    assert _damage_matches("1/4", 1)    # swaps between 1 and 4
     assert _damage_matches("1/4", 4)
     assert not _damage_matches("1/4", 2)
-    assert _damage_matches("3", None)    # unknown value -> don't exclude
+    assert _damage_matches("3", None)   # unknown value -> don't exclude
 
 
 def test_candidates_exclude_traps():
@@ -21,7 +24,7 @@ def test_candidates_exclude_traps():
 
 
 def test_magic_one_resolves_to_slime_only():
-    # Only the Slime is magic with damage 1, so the prefilter alone identifies it.
+    # Only the Slime is magic with base damage 1 — the prefilter alone nails it.
     assert candidate_species("magic", 1) == ["slime"]
 
 

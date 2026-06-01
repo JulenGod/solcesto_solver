@@ -6,13 +6,29 @@ import numpy as np
 import pytest
 
 from sol_cesto_solver.grid import COLS, ROWS, detect_board
-from sol_cesto_solver.state import GameState
+from sol_cesto_solver.recognition import drummer_buffed_positions
+from sol_cesto_solver.state import Cell, GameState
 
 FIXTURES_DIR = Path(__file__).parent / "fixtures"
 
 
 def _blank_image(width: int = 1920, height: int = 1080) -> np.ndarray:
     return np.zeros((height, width, 3), dtype=np.uint8)
+
+
+def test_drummer_buffs_its_horizontal_neighbours():
+    row = [
+        Cell(content="magic", value=3),
+        Cell(content="magic", value=2, species="drummer"),
+        Cell(content="physical", value=4),
+        Cell(content="empty"),
+    ]
+    assert drummer_buffed_positions([row]) == {(0, 0), (0, 2)}
+
+
+def test_no_drummer_means_no_buffs():
+    board = [[Cell(content="magic", value=1, species="slime") for _ in range(4)]]
+    assert drummer_buffed_positions(board) == set()
 
 
 def test_grid_layout_has_positive_cells():

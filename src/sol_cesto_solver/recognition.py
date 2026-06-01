@@ -23,6 +23,7 @@ BADGE_ICON_THRESHOLD = 0.60
 # score ~0.72–0.91; monsters / slimes / hover-preview bubbles score ≤0.33, so 0.55
 # separates them cleanly and rescues chests whose "?" badge is too dark to match.
 GOLDPILE_THRESHOLD = 0.55
+DRUMMER_BUFF = 1  # a Drummer raises each horizontally-adjacent monster's shown damage by 1
 DIGIT_THRESHOLD = 0.85
 # Each on-screen number uses a different font, so we match each region against only
 # its own font's templates (below) to avoid cross-contamination, and give the HP
@@ -225,6 +226,19 @@ def recognize_cell(
     return Cell(content=content, value=value, species=species)
 
 
+def drummer_buffed_positions(board: list[list[Cell]]) -> set[tuple[int, int]]:
+    """Board positions horizontally adjacent to a Drummer (shown damage is +1)."""
+    cols = len(board[0]) if board else 0
+    buffed: set[tuple[int, int]] = set()
+    for r, row in enumerate(board):
+        for c, cell in enumerate(row):
+            if cell.species == "drummer":
+                for nc in (c - 1, c + 1):
+                    if 0 <= nc < cols:
+                        buffed.add((r, nc))
+    return buffed
+
+
 def recognize_board(
     image: np.ndarray,
     layout: GridLayout,
@@ -233,8 +247,8 @@ def recognize_board(
     digit_templates: dict[str, np.ndarray],
     base_scale: float,
 ) -> list[list[Cell]]:
-    """Recognize all 16 cells of the 4x4 board."""
-    return [
+    """Recognize all 16 cells of the 4x4 board, then correct Drummer-buffed cells."""
+    board = [
         [
             recognize_cell(
                 layout.crop_cell(image, r, c),
@@ -247,6 +261,18 @@ def recognize_board(
         ]
         for r in range(ROWS)
     ]
+
+    # Second pass: a Drummer raises its horizontal neighbours' shown damage by +1.
+    # Re-identify those at their true base value and flag them; the displayed value
+    # still drives the HP maths (it's what actually hits you).
+    for r, c in drummer_buffed_positions(board):
+        cell = board[r][c]
+        if cell.content in {"physical", "magic"} and cell.value is not None:
+            crop = layout.crop_cell(image, r, c)
+            base_species = identify_species(crop, cell.content, cell.value - DRUMMER_BUFF)
+            board[r][c] = cell.model_copy(update={"species": base_species, "buffed": True})
+
+    return board
 
 
 def recognize_player(

@@ -100,6 +100,8 @@ def cell_label(cell: Cell) -> str:
     label = f"{names.get(cell.content, cell.content)} {value}"
     if cell.species:
         label += f" {cell.species}"
+    if cell.buffed:
+        label += " (buf)"
     return label
 
 
