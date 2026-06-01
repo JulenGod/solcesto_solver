@@ -13,6 +13,7 @@ from sol_cesto_solver.overlay import (
     cell_rect,
     format_panel_lines,
     hud_lines,
+    items_line,
     panel_anchor,
     row_highlight_rect,
     teeth_line,
@@ -146,3 +147,8 @@ def test_teeth_line_is_quiet_once_all_identified():
     line = teeth_line(teeth)
     assert not line.startswith("!!")
     assert line == "TEETH 1 ok"
+
+
+def test_items_line_none_and_listed():
+    assert items_line([]) == "ITEMS none"
+    assert items_line(["bomb", "arrow"]) == "ITEMS bomb, arrow"

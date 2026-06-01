@@ -139,9 +139,17 @@ def hud_lines(state: GameState, recommendation: Recommendation) -> list[str]:
             f"chs{_fmt_pct(m.treasure)} spk{_fmt_pct(m.trap)} gld x{m.gold_multiplier or 1}"
         ),
         teeth_line(state.teeth),
+        items_line(state.items),
         "",
     ]
     return summary + format_panel_lines(recommendation)
+
+
+def items_line(items: list[str]) -> str:
+    """One-line summary of the consumables the player is holding."""
+    if not items:
+        return "ITEMS none"
+    return f"ITEMS {', '.join(items)}"
 
 
 def teeth_line(teeth: list[ToothSlot]) -> str:

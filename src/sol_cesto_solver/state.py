@@ -91,3 +91,4 @@ class GameState(BaseModel):
     door: Door | None = None  # exit progress; None if unread.
     modifiers: Modifiers = Field(default_factory=Modifiers)  # landing/reward biases.
     teeth: list[ToothSlot] = Field(default_factory=list)  # equipped teeth (occupied slots).
+    items: list[str] = Field(default_factory=list)  # held consumable item keys (see items.py).

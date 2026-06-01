@@ -47,3 +47,24 @@ _ITEMS: tuple[Item, ...] = (
 )
 
 ITEMS: dict[str, Item] = {it.key: it for it in _ITEMS}
+
+
+def parse_item_list(spec: str) -> tuple[list[str], list[str]]:
+    """Parse a ``"bomb, ice cube"`` spec into (known item keys, unknown tokens).
+
+    Tokens are normalised (lowercased, spaces/hyphens -> underscores) so "Ice Cube",
+    "ice-cube" and "ice_cube" all resolve. Order and duplicates are preserved so
+    the count reflects what the player actually carries.
+    """
+    known: list[str] = []
+    unknown: list[str] = []
+    for token in spec.split(","):
+        raw = token.strip()
+        if not raw:
+            continue
+        key = raw.lower().replace(" ", "_").replace("-", "_")
+        if key in ITEMS:
+            known.append(key)
+        else:
+            unknown.append(raw)
+    return known, unknown

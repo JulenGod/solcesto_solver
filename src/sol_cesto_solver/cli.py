@@ -11,6 +11,7 @@ import numpy as np
 from .capture import CaptureError, ImageReadError, capture, find_window
 from .decision import recommend_row
 from .grid import detect_board, load_calibration, save_calibration, save_debug_overlay
+from .items import parse_item_list
 from .recognition import recognize_state
 
 
@@ -79,6 +80,14 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Gold multiplier from the book (e.g. 2 for x2).",
     )
     parser.add_argument(
+        "--items", metavar="LIST",
+        help=(
+            "Comma-separated consumables you're holding, e.g. 'bomb,arrow,ice_cube'. "
+            "Items aren't auto-detected yet; this tells the solver what you have. "
+            "Names are normalised ('Ice Cube' == 'ice_cube'); unknown ones are ignored."
+        ),
+    )
+    parser.add_argument(
         "--overlay",
         action="store_true",
         help=(
@@ -108,6 +117,12 @@ def _apply_overrides(state, args: argparse.Namespace) -> None:
             setattr(state.modifiers, content, pct / 100.0)
     if args.gold_mult is not None:
         state.modifiers.gold_multiplier = args.gold_mult
+
+    if args.items is not None:
+        known, unknown = parse_item_list(args.items)
+        state.items = known
+        if unknown:
+            print(f"warning: ignoring unknown items: {', '.join(unknown)}", file=sys.stderr)
 
 
 def _grab_image(args: argparse.Namespace) -> np.ndarray:
