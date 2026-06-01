@@ -77,3 +77,35 @@ def test_recognize_state_on_bundled_screenshot():
     assert state.player.max_hp == 5
     assert state.player.sword == 2
     assert state.player.magic == 1
+
+
+@pytest.mark.skipif(
+    not (FIXTURES_DIR / "screenshot_windowed.png").exists(),
+    reason="Windowed-resolution fixture missing.",
+)
+def test_recognize_state_on_windowed_capture():
+    """Cross-resolution regression: a real ~2401px-wide windowed capture.
+
+    Templates were cut from a 2552px screenshot, so this proves the multi-scale
+    matching adapts to a different window size (≈0.94×) for both board and stats.
+    """
+    from sol_cesto_solver.recognition import recognize_state
+
+    image = cv2.imread(str(FIXTURES_DIR / "screenshot_windowed.png"))
+    state = recognize_state(image, detect_board(image))
+
+    # Spot-check cells that are unambiguous in this capture.
+    assert state.board[0][0].content == "treasure"
+    assert state.board[0][1].content == "physical"
+    assert state.board[0][1].value == 3
+    assert state.board[1][1].content == "magic"
+    assert state.board[1][1].value == 1
+    assert state.board[2][1].content == "treasure"
+    assert state.board[3][3].content == "heal"
+    assert state.board[3][3].value == 1
+
+    # Stats read from the right panel at this resolution.
+    assert state.player.hp == 5
+    assert state.player.max_hp == 5
+    assert state.player.sword == 2
+    assert state.player.magic == 1
