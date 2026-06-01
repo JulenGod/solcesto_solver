@@ -25,6 +25,9 @@ htmlcov/
 debug-*.png
 debug-*.json
 
+# Training frames collected by scripts/train_capture.py
+captures/
+
 # IDEs
 .vscode/
 .idea/
