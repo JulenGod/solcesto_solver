@@ -199,9 +199,34 @@ sol-cesto-solver --watch 2              Re-capture every 2 seconds
 sol-cesto-solver --debug                Also write debug-grid.png with the grid overlaid
 sol-cesto-solver --window "Sol Cesto"   Override the game window title to find
 sol-cesto-solver --mimic-chance 0.2     Penalise treasure cells (late-game mimics)
+sol-cesto-solver --overlay              Live click-through overlay over the game (Windows)
 ```
 
 Errors land on stderr; the JSON output on stdout is always parsable.
+
+---
+
+## 🪟 Live overlay
+
+```powershell
+poetry run sol-cesto-solver --overlay
+```
+
+Opens a frameless, always-on-top, **click-through** window that frames the
+detected board and highlights the recommended row, refreshing once a second
+(tune with `--watch`). Because it's click-through, mouse input passes straight
+through to the game — the overlay never blocks play.
+
+Two practical requirements on Windows:
+
+- Run Sol Cesto **windowed** or **borderless windowed**. Exclusive fullscreen
+  bypasses the desktop compositor and would hide the overlay.
+- Capture without hovering a row — the in-game hover preview covers the badges,
+  so the hovered row reads as `empty` (see [Known limitations](#-known-limitations)).
+
+The drawing is split for testability: the screen-coordinate math (the pure
+helpers in [`overlay.py`](src/sol_cesto_solver/overlay.py)) is unit-tested,
+while the thin Tkinter window itself is exercised manually with the game open.
 
 ---
 
@@ -246,7 +271,8 @@ src/sol_cesto_solver/
 ├── recognition.py    Template-match badge icons (sword/magic/heart/?) and digits
 ├── state.py          Pydantic models: GameState, Player, Cell
 ├── decision.py       Expected-value evaluation, row recommendation
-└── cli.py            Pipeline: capture → recognise → recommend → JSON
+├── overlay.py        Transparent click-through overlay (pure geometry + Tk window)
+└── cli.py            Pipeline: capture → recognise → recommend → JSON / overlay
 
 scripts/
 ├── extract_templates.py            Interactive helper: drag a box, press a key
@@ -259,7 +285,8 @@ templates/
 tests/
 ├── fixtures/   Sample screenshot the end-to-end test runs against
 ├── test_recognition.py   Grid geometry + full-pipeline smoke test
-└── test_decision.py      Algorithm unit tests (17 cases)
+├── test_decision.py      Algorithm unit tests (17 cases)
+└── test_overlay.py       Overlay geometry + panel-text helpers (7 cases)
 ```
 
 ---
@@ -277,6 +304,8 @@ Coverage:
   regression in detection or templates flips it red.
 - **17 algorithm unit tests** covering every content type, the heal cap,
   the `None`-value fallback, tie-breaks, and `mimic_chance`.
+- **7 overlay tests** covering the screen-coordinate math (board frame,
+  recommended-row box, panel anchor) and panel-text formatting.
 
 CI runs `ruff check` + `pytest` on every push and PR (see
 [`.github/workflows/ci.yml`](.github/workflows/ci.yml)).
@@ -330,8 +359,11 @@ the cell, not the sprite.
 
 - **Preview row reads as `empty`.** When you hover a row in-game, an "ok ♥" /
   "25%" overlay covers the badges of that row's cells, so the detector can't
-  read them. In practice this means *capture without hovering*. Detecting the
-  overlay explicitly is Phase 3 work.
+  read them. In practice this means *capture without hovering*. Reading the
+  hovered row through that overlay is a future improvement.
+- **The overlay needs a windowed game and targets the primary monitor.**
+  Exclusive fullscreen hides it; multi-monitor setups currently draw on the
+  primary screen.
 - **Mimic chests can't be told apart from real chests in a single frame.**
   See [the `mimic_chance` section](#the-mimic_chance-hyperparameter) for the
   workaround. Frame-diff–based mimic detection is on the roadmap as Phase 5.
@@ -353,7 +385,7 @@ the cell, not the sprite.
 
 - [x] **Phase 1** — Detect the screen, produce a `GameState` JSON.
 - [x] **Phase 2** — Recommend a row via expected-value scoring (+ `mimic_chance`).
-- [ ] **Phase 3** — On-screen overlay highlighting the recommended row live.
+- [x] **Phase 3** — Live click-through overlay framing the board + recommended row.
 - [ ] **Phase 4** — Multi-turn lookahead, potion / inventory management.
 - [ ] **Phase 5** — Frame-diff mimic detection during live capture.
 
