@@ -87,14 +87,20 @@ def cell_rect(
 
 
 def cell_label(cell: Cell) -> str:
-    """Short label for a detected cell: 'phys 3', 'mag 1', 'heal 1', 'treasure', ''."""
+    """Short label for a cell: 'phys 3', 'mag 1 slime', 'treasure', '' …
+
+    Appends the identified species for monsters when known (e.g. 'phys 3 red_coyote').
+    """
     if cell.content == "empty":
         return ""
     if cell.content == "treasure":
         return "treasure"
     value = "?" if cell.value is None else cell.value
     names = {"physical": "phys", "magic": "mag", "heal": "heal"}
-    return f"{names.get(cell.content, cell.content)} {value}"
+    label = f"{names.get(cell.content, cell.content)} {value}"
+    if cell.species:
+        label += f" {cell.species}"
+    return label
 
 
 def _fmt_pct(value: float | None) -> str:

@@ -110,6 +110,10 @@ def test_recognize_state_on_windowed_capture():
     assert state.board[3][3].content == "heal"
     assert state.board[3][3].value == 1
 
+    # Best-effort species ID (badge prefilter + nearest reference sprite).
+    assert state.board[0][1].species == "red_coyote"  # the pink imp
+    assert state.board[1][1].species == "slime"
+
     # Stats read from the right panel at this resolution.
     assert state.player.hp == 5
     assert state.player.max_hp == 5

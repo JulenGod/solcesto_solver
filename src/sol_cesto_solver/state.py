@@ -24,6 +24,7 @@ class Cell(BaseModel):
 
     content: CellContent
     value: int | None = None   # damage requirement (physical/magic), heal amount, or None.
+    species: str | None = None  # identified monster key (best-effort); None if unsure.
 
 
 class Player(BaseModel):

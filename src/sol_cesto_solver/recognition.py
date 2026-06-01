@@ -13,6 +13,7 @@ import cv2
 import numpy as np
 
 from .grid import COLS, ROWS, GridLayout
+from .species import identify_species
 from .state import Cell, CellContent, Door, GameState, Player
 
 TEMPLATES_DIR = Path(__file__).resolve().parents[2] / "templates"
@@ -216,7 +217,12 @@ def recognize_cell(
         if digits:
             value = int(digits[0])
 
-    return Cell(content=content, value=value)
+    # Best-effort species ID for monsters (badge already gives class + damage).
+    species = None
+    if content in {"physical", "magic"}:
+        species = identify_species(cell_image, content, value)
+
+    return Cell(content=content, value=value, species=species)
 
 
 def recognize_board(
