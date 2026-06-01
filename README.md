@@ -288,7 +288,9 @@ src/sol_cesto_solver/
 └── cli.py            Pipeline: capture → recognise → recommend → JSON / overlay
 
 scripts/
-├── extract_templates.py            Interactive helper: drag a box, press a key
+├── train_capture.py                Collect changed frames while you play
+├── extract_templates.py            Cut a template: pick font, drag a box, press a key
+├── grab_capture.py                 Save one clean client-area frame (debugging)
 └── bootstrap_icons_from_screenshot.py   Seed templates from the bundled sample
 
 templates/
@@ -352,16 +354,24 @@ BADGE_TO_CONTENT: dict[str, CellContent] = {
 
 …and add `"defence"` to `CellContent` in `state.py`.
 
-**2. A new digit appears** (your current screenshots never include "7"):
+**2. A new digit appears** (e.g. gold reaches "7", or the door shows "3/5"):
+
+A single screenshot only shows a few values, so collect frames *while you play*,
+then cut the digits you're missing:
 
 ```powershell
-poetry run python scripts/extract_templates.py path/to/screenshot_with_7.png
-# -> drag a box around the 7, press '7'
+# 1. Play a training run — saves changed frames to captures/ (deduped)
+poetry run python scripts/train_capture.py
+
+# 2. Open a captured frame and cut the digit
+poetry run python scripts/extract_templates.py captures/capture_0007.png
+# -> press 'f' to pick the font, drag a box around the digit, press its key
 ```
 
-If the digit is rendered in a different font (e.g. on the HP heart vs. inside
-a `25%` badge), save it under a suffix recognised by `SYMBOL_NAMES`:
-`7_hp.png`, `7_stat.png`, etc.
+The **font tag matters**: each readout uses its own font, so the same glyph is
+saved per font — a gold "7" as `7_gold.png`, a door "3" as `3_door.png`, an HP
+digit as `7_hp.png`, a stat digit as `7_stat.png`, a cell badge as `7.png`. Those
+are exactly the suffixes the detector's per-font matching looks for.
 
 **3. A whole new monster type**: nothing to do! The badge is what classifies
 the cell, not the sprite.
