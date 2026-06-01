@@ -227,9 +227,13 @@ poetry run sol-cesto-solver --overlay
 ```
 
 Opens a frameless, always-on-top, **click-through** window that frames the
-detected board and highlights the recommended row, refreshing once a second
-(tune with `--watch`). Because it's click-through, mouse input passes straight
-through to the game — the overlay never blocks play.
+detected board, highlights the recommended row, labels every cell with its
+detected content + value, and shows a HUD panel (HP / sword / magic, gold, door
+progress and tiles remaining, book modifiers, per-row expected HP). It's a
+live read-out of *everything* the detector sees, so you can verify at a glance
+that it's reading the board correctly. Refreshes once a second (tune with
+`--watch`); being click-through, mouse input passes straight to the game — the
+overlay never blocks play.
 
 Two practical requirements on Windows:
 
