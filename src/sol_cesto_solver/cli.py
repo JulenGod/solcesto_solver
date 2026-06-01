@@ -55,7 +55,7 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--sword", type=int, metavar="N",
-        help="Override the detected sword (physical) stat — use if stat OCR misreads.",
+        help="Override the detected sword (physical) stat; use if stat OCR misreads.",
     )
     parser.add_argument(
         "--magic", type=int, metavar="N",
@@ -69,6 +69,15 @@ def _build_parser() -> argparse.ArgumentParser:
         "--max-hp", type=int, metavar="N",
         help="Override the detected max HP.",
     )
+    for content in ("physical", "magic", "heal", "treasure", "trap"):
+        parser.add_argument(
+            f"--mod-{content}", type=float, metavar="PCT",
+            help=f"Landing-bias modifier for {content} cells, in percent (e.g. 30 = +30%%).",
+        )
+    parser.add_argument(
+        "--gold-mult", type=float, metavar="X",
+        help="Gold multiplier from the book (e.g. 2 for x2).",
+    )
     parser.add_argument(
         "--overlay",
         action="store_true",
@@ -81,8 +90,8 @@ def _build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def _apply_stat_overrides(state, args: argparse.Namespace) -> None:
-    """Let explicit CLI flags override best-effort player-stat detection."""
+def _apply_overrides(state, args: argparse.Namespace) -> None:
+    """Let explicit CLI flags override best-effort stat / modifier detection."""
     if args.sword is not None:
         state.player.sword = args.sword
     if args.magic is not None:
@@ -91,6 +100,14 @@ def _apply_stat_overrides(state, args: argparse.Namespace) -> None:
         state.player.hp = args.hp
     if args.max_hp is not None:
         state.player.max_hp = args.max_hp
+
+    # Book modifiers: flags are in percent (30 -> 0.30); gold multiplier is a factor.
+    for content in ("physical", "magic", "heal", "treasure", "trap"):
+        pct = getattr(args, f"mod_{content}")
+        if pct is not None:
+            setattr(state.modifiers, content, pct / 100.0)
+    if args.gold_mult is not None:
+        state.modifiers.gold_multiplier = args.gold_mult
 
 
 def _grab_image(args: argparse.Namespace) -> np.ndarray:
@@ -115,7 +132,7 @@ def _run_once(args: argparse.Namespace) -> int:
     save_calibration(layout)
 
     state = recognize_state(image, layout)
-    _apply_stat_overrides(state, args)
+    _apply_overrides(state, args)
     recommendation = recommend_row(state, mimic_chance=args.mimic_chance)
 
     output = {
@@ -157,7 +174,7 @@ def _run_overlay(args: argparse.Namespace) -> int:
         layout = load_calibration((w, h)) or detect_board(image)
         save_calibration(layout)
         state = recognize_state(image, layout)
-        _apply_stat_overrides(state, args)
+        _apply_overrides(state, args)
         recommendation = recommend_row(state, mimic_chance=args.mimic_chance)
         return bounds, layout, recommendation
 
