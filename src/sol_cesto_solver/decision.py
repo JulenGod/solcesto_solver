@@ -1,11 +1,13 @@
 """Decision algorithm: pick the row that minimises expected HP loss.
 
-The player chooses a row; their character lands on one of its cells. Landing is
-uniform (¼ each) unless the player's book modifiers bias certain cell types — a
+The player chooses a row; their character lands on one of its **uncleared** cells.
+A broken tile can't be landed on again, so it drops out and the row renormalises
+over what remains (four 25% tiles, clear one, three become ~33%). Landing is
+otherwise uniform unless the player's book modifiers bias certain cell types — a
 "+30% physical" makes physical cells weigh 1.30 vs 1.0, renormalised across the
-row, so the per-cell odds shift. Each cell heals, damages, or does nothing per
-its `content`; we compute the expected HP change for every row and pick the
-highest (smallest loss, or largest heal).
+row. Each cell heals, damages, or does nothing per its `content`; we compute the
+expected HP change for every row and pick the highest (smallest loss, or largest
+heal) among rows that still have a tile to break.
 
 Ties are broken first by best worst-case outcome (more defensive), then by
 lowest row index (for stability across runs).
@@ -102,15 +104,20 @@ def _landing_bias(content: str, modifiers: Modifiers | None) -> float:
 def landing_probabilities(cells: list[Cell], modifiers: Modifiers | None = None) -> list[float]:
     """Per-cell landing probability for a row.
 
-    Each cell starts at weight 1, scaled by (1 + its content's modifier), then
-    normalised across the row. With no modifiers this is the uniform 1/N.
+    Cleared tiles (content 'empty') can't be landed on again, so they get zero
+    weight and the row renormalises over the remaining tiles — clearing one of
+    four 25% tiles leaves three at ~33%. Each remaining cell weighs
+    (1 + its content modifier). A fully-cleared row returns all zeros.
     """
     if not cells:
         return []
-    weights = [max(0.0, 1.0 + _landing_bias(c.content, modifiers)) for c in cells]
+    weights = [
+        0.0 if c.content == "empty" else max(0.0, 1.0 + _landing_bias(c.content, modifiers))
+        for c in cells
+    ]
     total = sum(weights)
     if total <= 0:
-        return [1.0 / len(cells)] * len(cells)
+        return [0.0] * len(cells)
     return [w / total for w in weights]
 
 
@@ -152,7 +159,8 @@ def _best_case_hp_to_open(
     """
     costs = sorted(
         (evaluate_cell(cell, state.player, mimic_chance)
-         for row in state.board for cell in row),
+         for row in state.board for cell in row
+         if cell.content != "empty"),  # already-cleared tiles can't be cleared again
         reverse=True,  # least loss (0 / heals) first, biggest loss last
     )
     return float(sum(costs[:tiles_remaining]))
@@ -170,8 +178,14 @@ def recommend_row(state: GameState, mimic_chance: float = 0.0) -> Recommendation
         evaluate_row(r, cells, state.player, mimic_chance, state.modifiers)
         for r, cells in enumerate(state.board)
     ]
+    # You can only make progress on rows that still have an uncleared tile; a
+    # fully-cleared row looks "free" (0 cost) but can't be played.
+    playable = [
+        ev for ev, cells in zip(rows, state.board, strict=True)
+        if any(c.content != "empty" for c in cells)
+    ]
     best = max(
-        rows,
+        playable or rows,
         key=lambda e: (e.expected_hp_change, e.worst_case_hp_change, -e.row),
     )
 
