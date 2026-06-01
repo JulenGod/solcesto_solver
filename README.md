@@ -200,7 +200,13 @@ sol-cesto-solver --debug                Also write debug-grid.png with the grid 
 sol-cesto-solver --window "Sol Cesto"   Override the game window title to find
 sol-cesto-solver --mimic-chance 0.2     Penalise treasure cells (late-game mimics)
 sol-cesto-solver --overlay              Live click-through overlay over the game (Windows)
+sol-cesto-solver --sword 2 --magic 1    Override detected player stats (if OCR misreads)
 ```
+
+Detection adapts to the window size automatically (templates are matched at
+multiple scales) and runs DPI-aware, so it works on scaled displays. The whole
+game window — including the right-hand HP / sword / magic panel — must be on
+screen for stats to be read; if it isn't, pass `--sword`/`--magic`/`--max-hp`.
 
 Errors land on stderr; the JSON output on stdout is always parsable.
 
@@ -367,11 +373,15 @@ the cell, not the sprite.
 - **Mimic chests can't be told apart from real chests in a single frame.**
   See [the `mimic_chance` section](#the-mimic_chance-hyperparameter) for the
   workaround. Frame-diff–based mimic detection is on the roadmap as Phase 5.
-- **Coordinates are calibrated for the bundled screenshot resolution.** The
-  board detector uses fixed proportions of the captured image; very unusual
-  aspect ratios or zoom levels may need a hand-edit of
-  `~/.sol-cesto-solver/calibration.json`. `--debug` prints the grid overlay
-  so you can eyeball misalignment.
+- **Board location uses fixed proportions of the captured image.** Templates are
+  matched at multiple scales so different window sizes work, but a very unusual
+  aspect ratio could still shift the grid. `--debug` writes the grid overlay so
+  you can eyeball misalignment; persistent cases can hand-edit
+  `~/.sol-cesto-solver/calibration.json`.
+- **Stat OCR is best-effort.** Reading HP/sword/magic needs the side panel fully
+  on screen and the right digit templates; when in doubt, override with
+  `--sword`/`--magic`/`--hp`/`--max-hp`. The board (what each row costs) is the
+  robust part; player stats are the override-friendly part.
 - **HP > 9.** The HP region currently expects single-digit `current/max`
   (the fallback splits "55" → 5/5). Multi-digit HP (e.g. `12/15`) needs a
   proper `/` template and a stricter parser. The model already handles it;
