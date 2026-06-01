@@ -208,6 +208,7 @@ sol-cesto-solver --window "Sol Cesto"   Override the game window title to find
 sol-cesto-solver --mimic-chance 0.2     Penalise treasure cells (late-game mimics)
 sol-cesto-solver --overlay              Live click-through overlay over the game (Windows)
 sol-cesto-solver --sword 2 --magic 1    Override detected player stats (if OCR misreads)
+sol-cesto-solver --mod-physical 30      Set a book modifier (+30% physical landing bias)
 ```
 
 Detection adapts to the window size automatically (templates are matched at
@@ -272,6 +273,16 @@ only reveal themselves through an animation tell or a player-applied debuff.
 We can't see that from a single frame, so the algorithm penalises every
 `treasure` cell by `mimic_chance · ASSUMED_MIMIC_LOSS` (default `0` for early
 levels, raise it on later levels via `--mimic-chance`).
+
+### Landing modifiers
+
+The flat ¼-per-cell assumption breaks once the player's book grants a landing
+bias (e.g. "+30% physical"). Each cell is then weighted `1 + modifier` for its
+content type and renormalised across the row, so the per-cell odds — and the
+recommended row — shift. Supply them with `--mod-physical`, `--mod-magic`,
+`--mod-heal`, `--mod-treasure`, `--mod-trap` (auto-reading the book is future
+work). The exact in-game percentage formula is assumed additive-weight, pending
+confirmation against a capture with non-zero modifiers.
 
 ---
 
