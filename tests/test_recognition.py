@@ -80,7 +80,7 @@ def test_recognize_state_on_bundled_screenshot():
 
     # Right-panel HUD: gold counter and door (exit) progress.
     assert state.gold == 0
-    assert state.door is not None and state.door.cleared == 0
+    assert state.door is not None and state.door.cleared == 0 and state.door.required == 5
 
 
 @pytest.mark.skipif(
@@ -116,4 +116,4 @@ def test_recognize_state_on_windowed_capture():
 
     # HUD counters read at this resolution too (proves multi-scale on the door/gold).
     assert state.gold == 0
-    assert state.door is not None and state.door.cleared == 0
+    assert state.door is not None and state.door.cleared == 0 and state.door.required == 5
