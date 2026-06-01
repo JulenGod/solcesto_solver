@@ -2,10 +2,10 @@
 
 The module is split in two layers, mirroring the rest of the codebase:
 
-* **Pure helpers** (`board_rect`, `row_highlight_rect`, `panel_anchor`,
-  `format_panel_lines`) — translate a window position + grid layout +
-  recommendation into absolute screen coordinates and panel text. No GUI
-  dependency, fully unit-tested.
+* **Pure helpers** (`board_rect`, `row_highlight_rect`, `cell_rect`, `cell_label`,
+  `hud_lines`, `format_panel_lines`) — translate a window position + grid layout +
+  game state + recommendation into absolute screen coordinates and overlay text.
+  No GUI dependency, fully unit-tested.
 * **The `Overlay` class** (added on top of this layer) — a Tkinter transparent,
   click-through, always-on-top window. GUI code can't run on a headless CI
   runner, so it stays thin and is exercised manually with the game open.
@@ -25,6 +25,7 @@ if TYPE_CHECKING:
     from .capture import WindowBounds
     from .decision import Recommendation
     from .grid import GridLayout
+    from .state import Cell, GameState
 
 # Pixels between the right edge of the board and the info panel.
 PANEL_MARGIN = 24
@@ -76,6 +77,64 @@ def format_panel_lines(recommendation: Recommendation) -> list[str]:
     return lines
 
 
+def cell_rect(
+    window: WindowBounds, layout: GridLayout, row: int, col: int
+) -> tuple[int, int, int, int]:
+    """Absolute screen rect (x, y, w, h) of a single board cell."""
+    x = window.left + layout.board_x + col * layout.cell_w
+    y = window.top + layout.board_y + row * layout.cell_h
+    return (x, y, layout.cell_w, layout.cell_h)
+
+
+def cell_label(cell: Cell) -> str:
+    """Short label for a detected cell: 'phys 3', 'mag 1', 'heal 1', 'treasure', ''."""
+    if cell.content == "empty":
+        return ""
+    if cell.content == "treasure":
+        return "treasure"
+    value = "?" if cell.value is None else cell.value
+    names = {"physical": "phys", "magic": "mag", "heal": "heal"}
+    return f"{names.get(cell.content, cell.content)} {value}"
+
+
+def _fmt_pct(value: float | None) -> str:
+    return "?" if value is None else f"{value * 100:+.0f}%"
+
+
+def hud_lines(state: GameState, recommendation: Recommendation) -> list[str]:
+    """Compact multi-line HUD summarising everything detected, for verification.
+
+    Player stats, gold, door progress and book modifiers, then the per-row
+    expected-HP breakdown and the pick (reused from `format_panel_lines`).
+    """
+    p = state.player
+    m = state.modifiers
+    door = state.door
+    gold = "?" if state.gold is None else state.gold
+
+    if door is None:
+        door_str = "DOOR ?"
+    else:
+        cleared = "?" if door.cleared is None else door.cleared
+        required = "?" if door.required is None else door.required
+        door_str = f"DOOR {cleared}/{required}"
+        if recommendation.door_open:
+            door_str += " (OPEN)"
+        elif recommendation.tiles_remaining is not None:
+            door_str += f" ({recommendation.tiles_remaining} left)"
+
+    summary = [
+        f"HP {p.hp}/{p.max_hp}   SWD {p.sword}   MAG {p.magic}",
+        f"GOLD {gold}   {door_str}",
+        (
+            f"MOD swd{_fmt_pct(m.physical)} mag{_fmt_pct(m.magic)} hrt{_fmt_pct(m.heal)} "
+            f"chs{_fmt_pct(m.treasure)} spk{_fmt_pct(m.trap)} gld x{m.gold_multiplier or 1}"
+        ),
+        "",
+    ]
+    return summary + format_panel_lines(recommendation)
+
+
 def enable_dpi_awareness() -> None:
     """Make the process per-monitor DPI aware (Windows). Best-effort no-op elsewhere.
 
@@ -118,6 +177,14 @@ class Overlay:
     ROW_COLOR = "#FFD400"     # recommended row (bright yellow)
     BOARD_WIDTH = 3
     ROW_WIDTH = 6
+    HUD_BG = "#0E0E0C"        # opaque panel behind the HUD text (not the key colour)
+    HUD_FG = "#EDEDED"
+    CONTENT_COLORS = {        # per-cell label colour by content type
+        "physical": "#FF5A5A",
+        "magic": "#5AA0FF",
+        "heal": "#FF8AD0",
+        "treasure": "#FFD400",
+    }
 
     def __init__(self) -> None:
         # Must precede the first Tk window so Tk matches the physical-pixel
@@ -168,15 +235,50 @@ class Overlay:
         style = user32.GetWindowLongW(hwnd, gwl_exstyle)
         user32.SetWindowLongW(hwnd, gwl_exstyle, style | ws_ex_layered | ws_ex_transparent)
 
-    def _draw(self, window: WindowBounds, layout: GridLayout, rec: Recommendation) -> None:
+    def _text(
+        self, x: int, y: int, text: str, color: str, size: int, anchor: str = "center"
+    ) -> None:
+        """Draw text with a black drop-shadow so it stays legible over the game."""
+        font = ("Consolas", size, "bold")
+        self.canvas.create_text(x + 2, y + 2, text=text, fill="#000000", font=font, anchor=anchor)
+        self.canvas.create_text(x, y, text=text, fill=color, font=font, anchor=anchor)
+
+    def _draw_hud(self, lines: list[str]) -> None:
+        x0, y0, pad, line_h = 14, 12, 10, 24
+        width, height = 600, pad * 2 + line_h * len(lines)
+        self.canvas.create_rectangle(
+            x0, y0, x0 + width, y0 + height, fill=self.HUD_BG, outline=self.BOARD_COLOR, width=2
+        )
+        for i, line in enumerate(lines):
+            self.canvas.create_text(
+                x0 + pad, y0 + pad + i * line_h, text=line, fill=self.HUD_FG,
+                font=("Consolas", 13, "bold"), anchor="nw",
+            )
+
+    def _draw(
+        self, window: WindowBounds, layout: GridLayout, state: GameState, rec: Recommendation
+    ) -> None:
         bx, by, bw, bh = board_rect(window, layout)
         self.canvas.create_rectangle(
             bx, by, bx + bw, by + bh, outline=self.BOARD_COLOR, width=self.BOARD_WIDTH
         )
+
+        # Per-cell detected content + value, colour-coded, near the bottom of each cell.
+        for r, row in enumerate(state.board):
+            for c, cell in enumerate(row):
+                label = cell_label(cell)
+                if not label:
+                    continue
+                cx, cy, cw, ch = cell_rect(window, layout, r, c)
+                color = self.CONTENT_COLORS.get(cell.content, "#FFFFFF")
+                self._text(cx + cw // 2, cy + ch - 24, label, color, 15)
+
         rx, ry, rw, rh = row_highlight_rect(window, layout, rec.best_row)
         self.canvas.create_rectangle(
             rx, ry, rx + rw, ry + rh, outline=self.ROW_COLOR, width=self.ROW_WIDTH
         )
+
+        self._draw_hud(hud_lines(state, rec))
 
     def _tick(self) -> None:
         if not self._running:
@@ -190,7 +292,7 @@ class Overlay:
     def run(self, poll, interval: float = 1.0) -> None:
         """Start the refresh loop and block until the window is closed.
 
-        `poll` is a zero-arg callable returning ``(window, layout, recommendation)``,
+        `poll` is a zero-arg callable returning ``(window, layout, state, recommendation)``,
         or ``None`` when the game window can't be read (the overlay then clears).
         """
         self._poll = poll

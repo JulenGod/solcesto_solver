@@ -9,10 +9,14 @@ from sol_cesto_solver.decision import CellOutcome, Recommendation, RowEvaluation
 from sol_cesto_solver.grid import GridLayout
 from sol_cesto_solver.overlay import (
     board_rect,
+    cell_label,
+    cell_rect,
     format_panel_lines,
+    hud_lines,
     panel_anchor,
     row_highlight_rect,
 )
+from sol_cesto_solver.state import Cell, Door, GameState, Modifiers, Player
 
 
 def _layout() -> GridLayout:
@@ -86,3 +90,37 @@ def test_panel_lines_show_signed_expected_values():
     assert "-0.50" in joined
     assert "+0.00" in joined
     assert "-0.25" in joined
+
+
+# --- per-cell labels + HUD ---------------------------------------------------
+
+def test_cell_rect_indexes_into_the_board():
+    # _layout(): cell_w=200, cell_h=150; window origin (50,30); board offset (100,20).
+    # row 1, col 2 -> x = 50+100+2*200 = 550, y = 30+20+1*150 = 200.
+    assert cell_rect(_window(50, 30), _layout(), 1, 2) == (550, 200, 200, 150)
+
+
+def test_cell_label_formats_by_content():
+    assert cell_label(Cell(content="physical", value=3)) == "phys 3"
+    assert cell_label(Cell(content="magic", value=1)) == "mag 1"
+    assert cell_label(Cell(content="heal", value=1)) == "heal 1"
+    assert cell_label(Cell(content="treasure")) == "treasure"
+    assert cell_label(Cell(content="empty")) == ""
+    assert cell_label(Cell(content="physical", value=None)) == "phys ?"
+
+
+def test_hud_lines_include_stats_gold_door_and_pick():
+    board = [[Cell(content="empty") for _ in range(4)] for _ in range(4)]
+    state = GameState(
+        board=board,
+        player=Player(hp=4, max_hp=5, sword=2, magic=1),
+        gold=7,
+        door=Door(cleared=2, required=5),
+        modifiers=Modifiers(physical=0.30),
+    )
+    text = "\n".join(hud_lines(state, _recommendation()))
+    assert "HP 4/5" in text
+    assert "GOLD 7" in text
+    assert "DOOR 2/5" in text
+    assert "swd+30%" in text
+    assert "Pick row 1" in text

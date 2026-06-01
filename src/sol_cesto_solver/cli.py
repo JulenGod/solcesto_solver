@@ -176,7 +176,7 @@ def _run_overlay(args: argparse.Namespace) -> int:
         state = recognize_state(image, layout)
         _apply_overrides(state, args)
         recommendation = recommend_row(state, mimic_chance=args.mimic_chance)
-        return bounds, layout, recommendation
+        return bounds, layout, state, recommendation
 
     interval = args.watch if args.watch is not None else 1.0
     print(f"overlay running (refresh every {interval:.1f}s). Ctrl-C to stop.", file=sys.stderr)
