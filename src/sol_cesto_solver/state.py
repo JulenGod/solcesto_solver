@@ -7,7 +7,7 @@ blue wand, red heart, gold "?") is stable UI that always means the same thing.
 """
 from typing import Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 CellContent = Literal[
     "physical",   # Red sword badge: defeated cleanly if player.sword >= value.
@@ -47,6 +47,24 @@ class Door(BaseModel):
     required: int | None = None
 
 
+class Modifiers(BaseModel):
+    """Per-content modifiers from the player's book (the bottom-left 2x3 grid).
+
+    The attack/heal/treasure/trap values are **landing-probability biases** stored
+    as fractions: e.g. physical = 0.30 (shown in-game as "+30%") makes physical
+    cells weigh 1.30 vs 1.0 for the rest, before the row is renormalised — which is
+    why the per-cell "25%" shifts. `gold_multiplier` scales gold gained (x1, x2, …)
+    and does NOT affect landing odds. None means that entry couldn't be read.
+    """
+
+    physical: float | None = None   # sword icon
+    magic: float | None = None       # wand icon
+    heal: float | None = None        # heart icon (strawberry cells)
+    treasure: float | None = None    # chest icon
+    trap: float | None = None        # spikes icon (trap cells)
+    gold_multiplier: float | None = None  # coin icon
+
+
 class GameState(BaseModel):
     """Full game state: the 4x4 board, the player, and run-level counters."""
 
@@ -54,3 +72,4 @@ class GameState(BaseModel):
     player: Player
     gold: int | None = None   # current gold (the frog's counter); None if unread.
     door: Door | None = None  # exit progress; None if unread.
+    modifiers: Modifiers = Field(default_factory=Modifiers)  # landing/reward biases.

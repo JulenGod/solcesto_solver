@@ -1,10 +1,13 @@
 """Tests for the row-recommendation algorithm."""
+import pytest
+
 from sol_cesto_solver.decision import (
     evaluate_cell,
     evaluate_row,
+    landing_probabilities,
     recommend_row,
 )
-from sol_cesto_solver.state import Cell, GameState, Player
+from sol_cesto_solver.state import Cell, GameState, Modifiers, Player
 
 
 def _player(hp: int = 5, max_hp: int = 5, sword: int = 2, magic: int = 1) -> Player:
@@ -159,3 +162,44 @@ def test_recommendation_contains_per_row_breakdown():
     rec = recommend_row(_state([cells, cells, cells, cells]))
     assert [r.row for r in rec.rows] == [0, 1, 2, 3]
     assert all(len(r.cells) == 4 for r in rec.rows)
+
+
+# ---------------------------------------------------------------------------
+# landing probabilities (book modifiers)
+# ---------------------------------------------------------------------------
+
+def test_landing_probabilities_uniform_without_modifiers():
+    cells = [Cell(content="empty") for _ in range(4)]
+    assert landing_probabilities(cells) == [0.25, 0.25, 0.25, 0.25]
+
+
+def test_modifier_biases_landing_toward_matching_cells():
+    cells = [
+        Cell(content="physical", value=3),
+        Cell(content="empty"),
+        Cell(content="empty"),
+        Cell(content="empty"),
+    ]
+    probs = landing_probabilities(cells, Modifiers(physical=0.30))
+    # Weights 1.3, 1, 1, 1 -> total 4.3.
+    assert probs[0] == pytest.approx(1.3 / 4.3)
+    assert probs[1] == pytest.approx(1.0 / 4.3)
+    assert sum(probs) == pytest.approx(1.0)
+
+
+def test_recommend_accounts_for_landing_bias():
+    # A row with one nasty physical hit becomes much worse when physical landings
+    # are heavily biased, so the safe row wins and the expected value reflects it.
+    risky = [
+        Cell(content="physical", value=5),  # -3 HP with sword 2
+        Cell(content="empty"),
+        Cell(content="empty"),
+        Cell(content="empty"),
+    ]
+    safe = [Cell(content="empty") for _ in range(4)]
+    player = Player(hp=5, max_hp=5, sword=2, magic=0)
+    state = GameState(board=[risky, safe], player=player, modifiers=Modifiers(physical=2.0))
+    rec = recommend_row(state)
+    assert rec.best_row == 1
+    # physical weight 3 of total 6 -> p=0.5; expected = 0.5 * -3 = -1.5.
+    assert rec.rows[0].expected_hp_change == pytest.approx(-1.5)

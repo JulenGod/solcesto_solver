@@ -1,9 +1,11 @@
 """Decision algorithm: pick the row that minimises expected HP loss.
 
-The player chooses a row; their character lands with uniform probability on one
-of the cells in that row. Each cell heals, damages, or does nothing depending
-on its `content`. We compute the expected HP change for every row and pick the
-highest one (i.e. the smallest loss, or the largest heal).
+The player chooses a row; their character lands on one of its cells. Landing is
+uniform (¼ each) unless the player's book modifiers bias certain cell types — a
+"+30% physical" makes physical cells weigh 1.30 vs 1.0, renormalised across the
+row, so the per-cell odds shift. Each cell heals, damages, or does nothing per
+its `content`; we compute the expected HP change for every row and pick the
+highest (smallest loss, or largest heal).
 
 Ties are broken first by best worst-case outcome (more defensive), then by
 lowest row index (for stability across runs).
@@ -15,7 +17,7 @@ are assumed safe.
 """
 from pydantic import BaseModel
 
-from .state import Cell, GameState, Player
+from .state import Cell, GameState, Modifiers, Player
 
 # When a treasure turns out to be a mimic, assume a moderate HP loss. We don't
 # have data on mimic stats — this is a placeholder until the user supplies a
@@ -72,18 +74,51 @@ def evaluate_cell(cell: Cell, player: Player, mimic_chance: float = 0.0) -> floa
     return 0.0
 
 
+def _landing_bias(content: str, modifiers: Modifiers | None) -> float:
+    """The landing-probability bias for a cell of this content (0 if none).
+
+    gold_multiplier is a reward scaler, not a landing bias, so it's excluded.
+    """
+    if modifiers is None:
+        return 0.0
+    by_content = {
+        "physical": modifiers.physical,
+        "magic": modifiers.magic,
+        "heal": modifiers.heal,
+        "treasure": modifiers.treasure,
+        "trap": modifiers.trap,
+    }
+    return by_content.get(content) or 0.0
+
+
+def landing_probabilities(cells: list[Cell], modifiers: Modifiers | None = None) -> list[float]:
+    """Per-cell landing probability for a row.
+
+    Each cell starts at weight 1, scaled by (1 + its content's modifier), then
+    normalised across the row. With no modifiers this is the uniform 1/N.
+    """
+    if not cells:
+        return []
+    weights = [max(0.0, 1.0 + _landing_bias(c.content, modifiers)) for c in cells]
+    total = sum(weights)
+    if total <= 0:
+        return [1.0 / len(cells)] * len(cells)
+    return [w / total for w in weights]
+
+
 def evaluate_row(
     row_index: int,
     cells: list[Cell],
     player: Player,
     mimic_chance: float = 0.0,
+    modifiers: Modifiers | None = None,
 ) -> RowEvaluation:
     """Expected HP change if the player picks this row."""
-    landing_p = 1.0 / len(cells) if cells else 0.0
+    probs = landing_probabilities(cells, modifiers)
     outcomes = [
         CellOutcome(
             col=i,
-            landing_probability=landing_p,
+            landing_probability=probs[i],
             hp_change=evaluate_cell(c, player, mimic_chance),
         )
         for i, c in enumerate(cells)
@@ -104,7 +139,7 @@ def recommend_row(state: GameState, mimic_chance: float = 0.0) -> Recommendation
     Tiebreakers (in order): better worst-case, then lower row index.
     """
     rows = [
-        evaluate_row(r, cells, state.player, mimic_chance)
+        evaluate_row(r, cells, state.player, mimic_chance, state.modifiers)
         for r, cells in enumerate(state.board)
     ]
     best = max(
