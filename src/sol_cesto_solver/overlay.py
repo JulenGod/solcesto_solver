@@ -74,6 +74,8 @@ def format_panel_lines(recommendation: Recommendation) -> list[str]:
         lines.append(f"{marker} Row {ev.row}   {ev.expected_hp_change:+.2f} HP")
     lines.append("")
     lines.append(f"► Pick row {recommendation.best_row}")
+    for advice in recommendation.item_advice:
+        lines.append(f"→ {advice.detail}")
     return lines
 
 

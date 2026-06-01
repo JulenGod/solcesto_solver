@@ -303,3 +303,46 @@ def test_recommend_avoids_the_fledgling_row_when_hawks_threaten():
     plain_row = [Cell(content="physical", value=1), _safe(), _safe(), _safe()]
     rec = recommend_row(_state([fledgling_row, plain_row], player))
     assert rec.best_row == 1
+
+
+# ---------------------------------------------------------------------------
+# item advice
+# ---------------------------------------------------------------------------
+
+def _state_with(rows, items, player=None):
+    return GameState(board=rows, player=player or _player(), items=items)
+
+
+def test_no_items_means_no_advice():
+    assert recommend_row(_state([[_safe() for _ in range(4)]])).item_advice == []
+
+
+def test_bomb_advice_targets_the_deadliest_row():
+    deadly = [Cell(content="physical", value=8) for _ in range(4)]  # -6 each
+    safe = [_safe() for _ in range(4)]
+    rec = recommend_row(_state_with([safe, deadly], ["bomb"], _player(sword=2)))
+    bomb = [a for a in rec.item_advice if a.item == "bomb"]
+    assert bomb and "row 1" in bomb[0].detail
+
+
+def test_arrow_advice_points_at_the_worst_monster():
+    rows = [[Cell(content="physical", value=8), _safe(), _safe(), _safe()]]
+    rec = recommend_row(_state_with(rows, ["arrow"], _player(sword=2)))
+    arrow = [a for a in rec.item_advice if a.item == "arrow"]
+    assert arrow and "row 0 col 0" in arrow[0].detail
+
+
+def test_bubble_advised_only_when_the_best_row_can_still_be_hit():
+    safe = [[_safe() for _ in range(4)]]
+    assert recommend_row(_state_with(safe, ["bubble"])).item_advice == []
+    risky = [[Cell(content="physical", value=5) for _ in range(4)]]
+    rec = recommend_row(_state_with(risky, ["bubble"], _player(sword=2)))
+    assert any(a.item == "bubble" for a in rec.item_advice)
+
+
+def test_heal_item_advised_only_when_wounded():
+    rows = [[_safe() for _ in range(4)]]
+    healthy = _state_with(rows, ["strawberry_juice"], _player(hp=5, max_hp=5))
+    assert recommend_row(healthy).item_advice == []
+    wounded = _state_with(rows, ["strawberry_juice"], _player(hp=2, max_hp=5))
+    assert any(a.item == "strawberry_juice" for a in recommend_row(wounded).item_advice)
